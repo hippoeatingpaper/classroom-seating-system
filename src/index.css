@@ -1,0 +1,73 @@
+/*src/index.css*/
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  }
+}
+
+@layer components {
+  .seat-grid {
+    display: grid;
+    gap: 0.5rem;
+    padding: 1.5rem;
+    background-color: #f9fafb;
+    border-radius: 0.5rem;
+  }
+}
+
+/* 사용 불가 좌석을 위한 사선 패턴 */
+.disabled-seat-pattern {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.1) 2px,
+    rgba(0, 0, 0, 0.1) 4px
+  );
+}
+
+/* 사용 불가 좌석 호버 효과 제거 */
+.disabled-seat-pattern:hover {
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+/* 드래그 앤 드롭 스타일 */
+.dragging {
+  opacity: 0.5;
+  transform: rotate(5deg);
+}
+
+.drag-over {
+  transform: scale(1.05);
+  box-shadow: 0 0 0 2px #3b82f6;
+}
+
+/* 인쇄 스타일 */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  @page {
+    margin: 1in;
+  }
+  
+  .classroom-grid {
+    break-inside: avoid;
+  }
+}
+
+/* 애니메이션 */
+.fade-in {
+  animation: fadeIn 0.2s ease-in;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
