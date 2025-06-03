@@ -1,5 +1,4 @@
 //src/App.tsx
-import React from 'react';
 import { AppProvider } from '@/context/AppContext';
 import { MainLayout } from '@/components/layout/MainLayout';
 

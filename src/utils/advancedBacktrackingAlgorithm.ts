@@ -5,9 +5,6 @@ import {
   calculateDistance, 
   validateAllConstraints,
   findStudentPosition,
-  areStudentsPaired,
-  getStudentsDistance,
-  canStudentSitAtPosition
 } from './constraintValidator';
 import { getAvailableSeats, isValidStudentPlacement } from './seatingAlgorithm';
 
@@ -647,8 +644,8 @@ export class AdvancedHeuristicEngine {
         if (prohibited) penalty += 50;
         
         // 성별이 다른 경우 (남녀 구분 배치 선호)
-        const occupant = state.unplacedStudents.find(s => s.id === occupantId) || 
-                        [...state.placedStudents].map(id => ({ id })).find(s => s.id === occupantId);
+        //const occupant = state.unplacedStudents.find(s => s.id === occupantId) || 
+        //                [...state.placedStudents].map(id => ({ id })).find(s => s.id === occupantId);
         // 실제로는 전체 학생 목록에서 찾아야 하지만 간단히 처리
       }
     }
@@ -697,7 +694,7 @@ export class AdvancedHeuristicEngine {
     state: PlacementState
   ): { isValid: boolean; updatedDomains: Map<string, Position[]> } {
     const updatedDomains = new Map(state.studentDomains);
-    const posKey = `${position.row}-${position.col}`;
+    //const posKey = `${position.row}-${position.col}`;
     
     // 1. 배치된 좌석을 모든 학생의 도메인에서 제거
     for (const [studentId, domain] of updatedDomains) {
@@ -820,10 +817,10 @@ export class AdvancedHeuristicEngine {
    */
   private createResult(state: PlacementState, message: string): PlacementResult {
     // 현재 상태의 모든 학생들을 찾아서 검증
-    const allStudentIds = new Set([
-      ...state.placedStudents,
-      ...state.unplacedStudents.map(s => s.id)
-    ]);
+    // const allStudentIds = new Set([
+    //   ...state.placedStudents,
+    //   ...state.unplacedStudents.map(s => s.id)
+    // ]);
     
     const allStudents = [...state.unplacedStudents];
     // 배치된 학생들의 정보도 복원 (실제로는 전체 학생 목록을 참조해야 함)

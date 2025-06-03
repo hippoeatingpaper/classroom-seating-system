@@ -4,10 +4,7 @@ import {
   isPairPosition, 
   calculateDistance, 
   validateAllConstraints,
-  findStudentPosition,
-  areStudentsPaired,
-  getStudentsDistance,
-  canStudentSitAtPosition
+  findStudentPosition
 } from './constraintValidator';
 import { getAvailableSeats, isValidStudentPlacement } from './seatingAlgorithm';
 
@@ -412,8 +409,8 @@ export class BacktrackingPlacementEngine {
    */
   private calculatePlacementCost(student: Student, position: Position, state: BacktrackingState): number {
     let cost = 0;
-    const posKey = `${position.row}-${position.col}`;
-    const tempSeating = { ...state.seating, [posKey]: student.id };
+    // const posKey = `${position.row}-${position.col}`;
+    // const tempSeating = { ...state.seating, [posKey]: student.id };
 
     // 제약조건 위반 비용
     const node = this.constraintGraph.studentNodes.get(student.id);
@@ -453,7 +450,7 @@ export class BacktrackingPlacementEngine {
   /**
    * 미래 제약조건 영향 계산
    */
-  private calculateFutureConstraints(student: Student, position: Position, state: BacktrackingState): number {
+  private calculateFutureConstraints(student: Student, _position: Position, state: BacktrackingState): number {
     let futureConstraints = 0;
     
     // 이 위치가 다른 학생들의 배치에 미치는 영향 계산

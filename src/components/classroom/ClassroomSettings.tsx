@@ -1,6 +1,6 @@
 //src/components/classroom/ClassroomSettings.tsx
 import React, { useState } from 'react';
-import { Trash2, Ban, RotateCw, AlertTriangle, Eye, User } from 'lucide-react';
+import { Ban, RotateCw, AlertTriangle, Eye, User } from 'lucide-react';
 import { Input } from '@/components/common/Input';
 import { Button } from '@/components/common/Button';
 import { Modal } from '@/components/common/Modal';

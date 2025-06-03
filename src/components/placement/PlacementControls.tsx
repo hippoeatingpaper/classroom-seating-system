@@ -1,8 +1,8 @@
 //src/components/placement/PlacementControls.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   Shuffle, RotateCcw, Users, UserCheck, AlertTriangle, CheckCircle, 
-  Zap, Target, Cpu, Layers, Gauge, Rocket, Brain, Settings2,
+  Target, Cpu, Brain, Settings2,
   Clock, TrendingUp, Activity, Sparkles, Rows
 } from 'lucide-react';
 import { Button } from '@/components/common/Button';
@@ -185,11 +185,6 @@ export const PlacementControls: React.FC = () => {
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [placementProgress, setPlacementProgress] = useState<PlacementProgress | null>(null);
   const [qualityMetrics, setQualityMetrics] = useState<QualityMetrics | null>(null);
-  const [hybridOptions, setHybridOptions] = useState({
-    timeLimit: 30000,
-    qualityTarget: 90,
-    adaptiveStrategy: true,
-  });
   const [adaptiveRandomOptions, setAdaptiveRandomOptions] = useState({
     generateMultiple: 3,  // 여러 후보 중 최고 선택
     seed: 0,             // 시드 값 (0이면 랜덤)

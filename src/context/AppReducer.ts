@@ -1,5 +1,5 @@
 //src/context/AppReducer.tsx
-import { AppState, AppAction, Student, ClassroomConfig, Constraints } from '@/types';
+import { AppState, AppAction, Student, ClassroomConfig } from '@/types';
 import { generateId } from '@/utils/idGenerator';
 
 /**
@@ -189,7 +189,7 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
 
     // 좌석 사용 제약조건
     case 'SET_SEAT_USAGE_CONSTRAINT': {
-      const { position, isDisabled, reason } = action.payload;
+      const { position, isDisabled } = action.payload;
       
       const updatedConstraints = state.classroom.seatUsageConstraints.filter(
         c => !(c.position.row === position.row && c.position.col === position.col)

@@ -3,7 +3,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { User, UserX, Ban, RotateCw, AlertCircle, X } from 'lucide-react';
 import { SeatGenderConstraint, SeatUsageConstraint } from '@/types';
 import { useAppContext } from '@/context/AppContext';
-import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 

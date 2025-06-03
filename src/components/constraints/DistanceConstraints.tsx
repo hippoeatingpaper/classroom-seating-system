@@ -243,7 +243,7 @@ export const DistanceConstraints: React.FC<DistanceConstraintsProps> = ({
                           <div 
                             key={i} 
                             className={`w-2 h-2 rounded-full ${
-                              i < constraint.minDistance 
+                              (i < constraint.minDistance) && status.currentDistance 
                                 ? (status.currentDistance >= constraint.minDistance ? 'bg-green-400' : 'bg-red-400')
                                 : 'bg-green-400'
                             }`}

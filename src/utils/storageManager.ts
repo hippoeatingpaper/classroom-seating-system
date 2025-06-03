@@ -13,11 +13,11 @@ const STORAGE_VERSION = '2.1'; // 좌석 사용 제외 기능 추가로 버전 �
 
 export const saveToStorage = (state: Partial<AppState>) => {
   try {
-    const dataToSave = {
-      version: STORAGE_VERSION,
-      timestamp: new Date().toISOString(),
-      ...state,
-    };
+    // const dataToSave = {
+    //   version: STORAGE_VERSION,
+    //   timestamp: new Date().toISOString(),
+    //   ...state,
+    // };
 
     if (state.students) {
       localStorage.setItem(STORAGE_KEYS.STUDENTS, JSON.stringify(state.students));

@@ -4,9 +4,9 @@ import {
   validateAllConstraints,
   isPairPosition,
   calculateDistance,
-  findStudentPosition 
+  findStudentPosition
 } from './constraintValidator';
-import { getAvailableSeats, isValidStudentPlacement } from './seatingAlgorithm';
+import { getAvailableSeats } from './seatingAlgorithm';
 
 interface RandomizationConfig {
   mode: 'conservative' | 'balanced' | 'exploratory' | 'chaos';
@@ -125,20 +125,6 @@ export class AdaptiveRandomHeuristicEngine {
       violations: validation.violations,
       stats
     };
-  }
-
-  /**
-   * 학생이 특정 좌석에 기본적으로 앉을 수 있는지 확인
-   */
-  private isBasicallyValidSeat(student: Student, seat: Position): boolean {
-    return isValidStudentPlacement(student, seat, this.classroom, this.constraints);
-  }
-
-  /**
-   * 학생이 특정 좌석에 현재 상황을 고려하여 앉을 수 있는지 확인
-   */
-  private canPlaceStudentAtWithContext(student: Student, position: Position, seating: SeatingArrangement): boolean {
-    return isValidStudentPlacement(student, position, this.classroom, this.constraints, seating);
   }
 
   /**
@@ -380,7 +366,7 @@ export class AdaptiveRandomHeuristicEngine {
   /**
    * 균형적 선택
    */
-  private selectBalanced(candidates: SeatCandidate[], config: RandomizationConfig): SeatCandidate {
+  private selectBalanced(candidates: SeatCandidate[], _config: RandomizationConfig): SeatCandidate {
     // 상위 50% 중에서 가중 랜덤 선택
     const sortedCandidates = candidates.sort((a, b) => b.finalScore - a.finalScore);
     const topHalf = sortedCandidates.slice(0, Math.max(1, Math.ceil(candidates.length * 0.5)));
@@ -405,7 +391,7 @@ export class AdaptiveRandomHeuristicEngine {
   /**
    * 탐험적 선택
    */
-  private selectExploratory(candidates: SeatCandidate[], config: RandomizationConfig): SeatCandidate {
+  private selectExploratory(candidates: SeatCandidate[], _config: RandomizationConfig): SeatCandidate {
     // 다양성 점수가 높은 선택지를 선호
     const diversityWeightedCandidates = candidates.map(candidate => ({
       ...candidate,
@@ -483,7 +469,7 @@ export class AdaptiveRandomHeuristicEngine {
     // 현재 배치된 학생들과의 다양성 점수
     let diversityBonus = 0;
     
-    const placedStudentGenders = Object.values(seating).map(studentId => {
+    const placedStudentGenders = Object.values(seating).map(_studentId => {
       // 실제로는 학생 ID로 성별을 찾아야 함
       return 'unknown'; // 간단한 구현
     });
@@ -498,50 +484,30 @@ export class AdaptiveRandomHeuristicEngine {
   }
 
   private evaluateConstraintScore(student: Student, position: Position, seating: SeatingArrangement): number {
-    // 통합 검증 함수 사용
-    if (!this.canPlaceStudentAtWithContext(student, position, seating)) {
+    let score = 100; // 완벽한 상태에서 시작
+
+    // 성별 제약조건 체크
+    const genderConstraint = this.classroom.seatGenderConstraints?.find(
+      c => c.position.row === position.row && c.position.col === position.col
+    );
+    if (genderConstraint?.requiredGender && student.gender !== genderConstraint.requiredGender) {
       return -100; // 완전 불가능
     }
 
-    let score = 100; // 완벽한 상태에서 시작
-
-    // 추가적인 제약조건 점수 계산
-    const connections = this.getStudentConstraintConnections(student.id);
-    
-    for (const otherId of connections) {
-      const otherPosition = findStudentPosition(otherId, seating);
-      if (!otherPosition) continue; // 아직 배치되지 않은 학생
-      
-      // 짝 강제 제약조건 확인
-      const pairRequired = this.constraints.pairRequired.find(
-        c => c.students.includes(student.id) && c.students.includes(otherId)
-      );
-      if (pairRequired && isPairPosition(position, otherPosition)) {
-        score += 40; // 짝 강제 만족 시 높은 점수
-      }
-      
-      // 짝 방지 제약조건 확인
-      const pairProhibited = this.constraints.pairProhibited.find(
-        c => c.students.includes(student.id) && c.students.includes(otherId)
-      );
-      if (pairProhibited && !isPairPosition(position, otherPosition)) {
-        score += 30; // 짝 방지 만족 시 점수
-      }
-      
-      // 거리 제약조건 확인
-      const distanceRule = this.constraints.distanceRules.find(
-        c => c.students.includes(student.id) && c.students.includes(otherId)
-      );
-      if (distanceRule) {
-        const distance = calculateDistance(position, otherPosition);
-        if (distance >= distanceRule.minDistance) {
-          score += 35; // 거리 제약 만족 시 점수
-        } else {
-          score -= (distanceRule.minDistance - distance) * 10; // 위반 시 페널티
-        }
-      }
+    // 사용 불가 좌석 체크
+    const usageConstraint = this.classroom.seatUsageConstraints?.find(
+      c => c.position.row === position.row && c.position.col === position.col && c.isDisabled
+    );
+    if (usageConstraint) {
+      return -100; // 완전 불가능
     }
-    
+
+    // 짝 제약조건 체크
+    score -= this.evaluatePairConstraintViolations(student, position, seating) * 30;
+
+    // 거리 제약조건 체크
+    score -= this.evaluateDistanceConstraintViolations(student, position, seating) * 25;
+
     return Math.max(-100, Math.min(100, score));
   }
 
@@ -565,7 +531,7 @@ export class AdaptiveRandomHeuristicEngine {
     return Math.max(0, Math.min(100, score));
   }
 
-  private evaluateSeatDiversityScore(position: Position, student: Student): number {
+  private evaluateSeatDiversityScore(position: Position, _student: Student): number {
     const key = `${position.row}-${position.col}`;
     const currentDiversity = this.diversityMap.get(key) || 0;
     
@@ -621,35 +587,7 @@ export class AdaptiveRandomHeuristicEngine {
   private getStudentConstraintCount(studentId: string): number {
     return this.constraints.pairRequired.filter(c => c.students.includes(studentId)).length +
            this.constraints.pairProhibited.filter(c => c.students.includes(studentId)).length +
-           this.constraints.distanceRules.filter(c => c.students.includes(studentId)).length +
-           (this.constraints.rowExclusions.find(c => c.studentId === studentId) ? 1 : 0);
-  }
-
-  private getStudentConstraintConnections(studentId: string): string[] {
-    const connections = new Set<string>();
-    
-    this.constraints.pairRequired.forEach(c => {
-      if (c.students.includes(studentId)) {
-        const otherId = c.students.find(id => id !== studentId);
-        if (otherId) connections.add(otherId);
-      }
-    });
-    
-    this.constraints.pairProhibited.forEach(c => {
-      if (c.students.includes(studentId)) {
-        const otherId = c.students.find(id => id !== studentId);
-        if (otherId) connections.add(otherId);
-      }
-    });
-    
-    this.constraints.distanceRules.forEach(c => {
-      if (c.students.includes(studentId)) {
-        const otherId = c.students.find(id => id !== studentId);
-        if (otherId) connections.add(otherId);
-      }
-    });
-    
-    return Array.from(connections);
+           this.constraints.distanceRules.filter(c => c.students.includes(studentId)).length;
   }
 
   private calculateGenderBalance(seating: SeatingArrangement): { maleRatio: number; femaleRatio: number } {
@@ -660,7 +598,60 @@ export class AdaptiveRandomHeuristicEngine {
     return { maleRatio: 0.5, femaleRatio: 0.5 };
   }
 
-  private countNearbyGender(gender: 'male' | 'female', position: Position, seating: SeatingArrangement): number {
+  private evaluatePairConstraintViolations(student: Student, position: Position, seating: SeatingArrangement): number {
+    let violations = 0;
+    
+    // 짝 강제 제약조건 체크
+    this.constraints.pairRequired.forEach(constraint => {
+      if (constraint.students.includes(student.id)) {
+        const otherId = constraint.students.find(id => id !== student.id);
+        if (otherId) {
+          const otherPosition = findStudentPosition(otherId, seating);
+          if (otherPosition && !isPairPosition(position, otherPosition)) {
+            violations++;
+          }
+        }
+      }
+    });
+
+    // 짝 방지 제약조건 체크
+    this.constraints.pairProhibited.forEach(constraint => {
+      if (constraint.students.includes(student.id)) {
+        const otherId = constraint.students.find(id => id !== student.id);
+        if (otherId) {
+          const otherPosition = findStudentPosition(otherId, seating);
+          if (otherPosition && isPairPosition(position, otherPosition)) {
+            violations++;
+          }
+        }
+      }
+    });
+
+    return violations;
+  }
+
+  private evaluateDistanceConstraintViolations(student: Student, position: Position, seating: SeatingArrangement): number {
+    let violations = 0;
+
+    this.constraints.distanceRules.forEach(constraint => {
+      if (constraint.students.includes(student.id)) {
+        const otherId = constraint.students.find(id => id !== student.id);
+        if (otherId) {
+          const otherPosition = findStudentPosition(otherId, seating);
+          if (otherPosition) {
+            const distance = calculateDistance(position, otherPosition);
+            if (distance < constraint.minDistance) {
+              violations++;
+            }
+          }
+        }
+      }
+    });
+
+    return violations;
+  }
+
+  private countNearbyGender(_gender: 'male' | 'female', position: Position, seating: SeatingArrangement): number {
     let count = 0;
     const adjacentPositions = [
       { row: position.row - 1, col: position.col - 1 }, // 좌상
@@ -715,7 +706,7 @@ export class AdaptiveRandomHeuristicEngine {
     return count;
   }
 
-  private calculatePlacementConfidence(student: StudentCandidate, seat: SeatCandidate): number {
+  private calculatePlacementConfidence(_student: StudentCandidate, seat: SeatCandidate): number {
     // 제약조건 만족도가 높고, 대안이 적을수록 높은 신뢰도
     const constraintConfidence = Math.max(0, Math.min(100, seat.constraintScore));
     const alternativesPenalty = Math.min(20, seat.finalScore * 0.1); // 대안이 많으면 신뢰도 하락
@@ -724,12 +715,12 @@ export class AdaptiveRandomHeuristicEngine {
   }
 
   private calculateRandomInfluence(
-    student: StudentCandidate, 
+    _student: StudentCandidate, 
     seat: SeatCandidate, 
-    config: RandomizationConfig
+    _config: RandomizationConfig
   ): number {
     // 랜덤성이 최종 결정에 미친 영향도 계산
-    const randomWeight = config.seatSelectionRandomness / 100;
+    // const randomWeight = config.seatSelectionRandomness / 100;
     const totalScore = seat.constraintScore + seat.heuristicScore + seat.randomFactor + seat.diversityScore;
     
     if (totalScore <= 0) return 0;
@@ -738,7 +729,7 @@ export class AdaptiveRandomHeuristicEngine {
   }
 
   private generatePlacementReasoning(
-    student: StudentCandidate,
+    _student: StudentCandidate,
     seat: SeatCandidate,
     config: RandomizationConfig,
     phaseName: string
@@ -780,7 +771,7 @@ export class AdaptiveRandomHeuristicEngine {
     return reasons.join(', ') || '기본 선택';
   }
 
-  private updateDiversityMap(position: Position, student: Student): void {
+  private updateDiversityMap(position: Position, _student: Student): void {
     const key = `${position.row}-${position.col}`;
     const currentValue = this.diversityMap.get(key) || 0;
     this.diversityMap.set(key, currentValue + 1);
