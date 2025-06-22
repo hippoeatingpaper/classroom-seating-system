@@ -65,6 +65,32 @@ export const ClassroomGrid: React.FC = () => {
   const availableSeats = totalSeats - disabledSeats;
   const placedStudents = Object.keys(currentSeating).length;
 
+  const calculateSeatTypeCounts = () => {
+    const totalSeats = classroom.rows * classroom.cols;
+    const disabledCount = classroom.seatUsageConstraints.filter(c => c.isDisabled).length;
+    
+    // 성별 전용 좌석 개수
+    const maleOnlySeats = classroom.seatGenderConstraints.filter(c => c.requiredGender === 'male').length;
+    const femaleOnlySeats = classroom.seatGenderConstraints.filter(c => c.requiredGender === 'female').length;
+    
+    // 전체 학생 목록에서 성별별 개수
+    const maleStudents = students.filter(student => student.gender === 'male').length;
+    const femaleStudents = students.filter(student => student.gender === 'female').length;
+    
+    // 빈 좌석 개수 (전체 - 사용안함 - 배치된 학생)
+    const emptySeats = totalSeats - disabledCount - Object.keys(currentSeating).length;
+    
+    return {
+      empty: emptySeats,
+      disabled: disabledCount,
+      maleStudents: maleStudents,
+      femaleStudents: femaleStudents,
+      maleOnly: maleOnlySeats,
+      femaleOnly: femaleOnlySeats
+    };
+  };
+  const seatCounts = calculateSeatTypeCounts();
+
   return (
     <div className="flex flex-col items-center space-y-6">
       <div className="bg-gray-800 text-white px-6 py-3 rounded-lg font-semibold">
@@ -115,27 +141,27 @@ export const ClassroomGrid: React.FC = () => {
       <div className="flex flex-wrap gap-4 text-sm">
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 bg-seat-empty border border-gray-300 border-dashed rounded"></div>
-          <span>빈 좌석</span>
+          <span>빈 좌석 {seatCounts.empty}</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 bg-seat-male rounded"></div>
-          <span>남학생</span>
+          <span>남학생 {seatCounts.maleStudents}</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 bg-seat-female rounded"></div>
-          <span>여학생</span>
+          <span>여학생 {seatCounts.femaleStudents}</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 bg-gray-300 rounded disabled-seat-pattern"></div>
-          <span>사용 안함</span>
+          <span>사용 안함 {seatCounts.disabled}</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 bg-gray-200 border-2 border-blue-600 rounded"></div>
-          <span>남학생 전용</span>
+          <span>남학생 전용 {seatCounts.maleOnly}</span>
         </div>
         <div className="flex items-center gap-2">
           <div className="w-4 h-4 bg-gray-200 border-2 border-pink-600 rounded"></div>
-          <span>여학생 전용</span>
+          <span>여학생 전용 {seatCounts.femaleOnly}</span>
         </div>
       </div>
 

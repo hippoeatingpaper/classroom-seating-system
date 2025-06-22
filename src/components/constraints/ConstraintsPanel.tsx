@@ -109,14 +109,6 @@ export const ConstraintsPanel: React.FC = () => {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h3 className="text-lg font-semibold text-gray-900">제약조건</h3>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleToggleAdvanced}
-            className={`text-xs ${showAdvanced ? 'bg-blue-50 text-blue-700 border-blue-200' : 'text-gray-600'}`}
-          >
-            고급 {showAdvanced ? '▼' : ''}
-          </Button>
         </div>
         <div className="text-sm text-gray-500">
           총 {getTotalConstraints()}개
@@ -160,7 +152,7 @@ export const ConstraintsPanel: React.FC = () => {
 
       {/* 탭 버튼들 */}
       <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
+        <nav className="-mb-px flex space-x-11 overflow-x-auto scrollbar-hide">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -169,7 +161,7 @@ export const ConstraintsPanel: React.FC = () => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-2 py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
+                className={`flex items-center gap-2 py-2 px-1 border-b-2 font-medium text-sm transition-colors flex-shrink-0 min-w-[100px] whitespace-nowrap ${
                   isActive
                     ? `border-current ${tab.color}`
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
@@ -263,7 +255,7 @@ export const ConstraintsPanel: React.FC = () => {
                 <span className="font-medium">{state.constraints.pairProhibited.length}쌍</span>
               </div>
             )}
-            {state.constraints.distanceRules.length > 0 && showAdvanced && (
+            {/* {state.constraints.distanceRules.length > 0 && showAdvanced && (
               <div className="flex justify-between">
                 <span className="text-orange-600">거리 유지:</span>
                 <span className="font-medium">{state.constraints.distanceRules.length}쌍</span>
@@ -274,7 +266,7 @@ export const ConstraintsPanel: React.FC = () => {
                 <span className="text-purple-600">줄 제외:</span>
                 <span className="font-medium">{state.constraints.rowExclusions.length}개</span>
               </div>
-            )}
+            )} */}
             <div className="pt-2 border-t border-gray-200 flex justify-between">
               <span className="text-gray-700">상태:</span>
               <span className={`font-medium flex items-center gap-1 ${
@@ -307,6 +299,17 @@ export const ConstraintsPanel: React.FC = () => {
           classroom={state.classroom}
         />
       )}
+
+      {/* 은밀한 고급 버튼 - 맨 아래 배치 */}
+      <div className="pt-8 flex justify-start">
+        <button
+          onClick={handleToggleAdvanced}
+          className="text-xs text-gray-300 hover:text-gray-400 transition-colors px-2 py-1 bg-transparent border-none outline-none focus:outline-none"
+          style={{ opacity: 0.3 }}
+        >
+          {showAdvanced ? '●●●' : '○○○'}
+        </button>
+      </div>
     </div>
-  );
+  )
 };

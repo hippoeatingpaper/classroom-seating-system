@@ -52,6 +52,9 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
           if (data.currentSeating) {
             dispatch({ type: 'SET_SEATING', payload: data.currentSeating });
           }
+          if (data.constraints) {
+            dispatch({ type: 'SET_CONSTRAINTS', payload: data.constraints });
+          }
           
           alert('데이터를 성공적으로 불러왔습니다.');
         } catch (error) {

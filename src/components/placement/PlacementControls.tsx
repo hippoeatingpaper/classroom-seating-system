@@ -2,25 +2,19 @@
 import React, { useState } from 'react';
 import { 
   Shuffle, RotateCcw, Users, UserCheck, AlertTriangle, CheckCircle, 
-  Target, Cpu, Brain, Settings2,
+  Target, Brain, Settings2,
   Clock, TrendingUp, Activity, Sparkles, Rows
 } from 'lucide-react';
 import { Button } from '@/components/common/Button';
 import { useAppContext } from '@/context/AppContext';
 import { 
-  generateGenderBalancedPlacement, 
   getAvailableSeats,
   validateSeatingArrangement
 } from '@/utils/seatingAlgorithm';
-import { generateAdvancedHeuristicPlacement } from '@/utils/advancedBacktrackingAlgorithm';
-import { generateAdaptiveRandomPlacement } from '@/utils/adaptiveRandomHeuristics';
-import { generateBacktrackingPlacement } from '@/utils/backtrackingAlgorithm';
 import { validateConstraintCompatibility } from '@/utils/constraintValidator';
 
 type AlgorithmType = 
-  | 'advanced_heuristic' // 고급 휴리스틱
-  | 'backtrack'          // 백트래킹
-  | 'gender'            // 남녀 구분
+  | 'gender'
   | 'adaptive_random_subtle'
   | 'adaptive_random_balanced'
   | 'adaptive_random_creative'
@@ -56,6 +50,17 @@ interface QualityMetrics {
   efficiency: 'excellent' | 'good' | 'fair' | 'poor';
 }
 
+const categorizeViolations = (violations: any[]) => {
+  const publicViolations = violations.filter(v => 
+    v.type === 'pair_required' || v.type === 'pair_prohibited'
+  );
+  const hiddenViolations = violations.filter(v => 
+    v.type === 'distance' || v.type === 'row_exclusion'
+  );
+
+  return { publicViolations, hiddenViolations };
+};
+
 const getSelectedAlgorithmIcon = (selectedAlgorithm: AlgorithmType) => {
   const algorithm = ALGORITHM_OPTIONS.find(a => a.id === selectedAlgorithm);
   if (algorithm) {
@@ -64,8 +69,6 @@ const getSelectedAlgorithmIcon = (selectedAlgorithm: AlgorithmType) => {
   
   // 기본값 반환
   switch (selectedAlgorithm) {
-    case 'advanced_heuristic': return Target;
-    case 'backtrack': return Cpu;
     case 'gender': return Users;
     case 'adaptive_random_subtle': return Target;
     case 'adaptive_random_balanced': return Activity;
@@ -83,8 +86,6 @@ const getSelectedAlgorithmName = (selectedAlgorithm: AlgorithmType) => {
   
   // 기본값 반환
   switch (selectedAlgorithm) {
-    case 'advanced_heuristic': return '🎯 고급 휴리스틱';
-    case 'backtrack': return '🔄 백트래킹';
     case 'gender': return '👫 남녀 구분';
     case 'adaptive_random_subtle': return '🎯 적응형 랜덤 (미묘)';
     case 'adaptive_random_balanced': return '⚖️ 적응형 랜덤 (균형)';
@@ -96,39 +97,15 @@ const getSelectedAlgorithmName = (selectedAlgorithm: AlgorithmType) => {
 
 const ALGORITHM_OPTIONS: AlgorithmOption[] = [
   {
-    id: 'advanced_heuristic',
-    name: '🎯 고급 휴리스틱',
-    description: 'MRV, Degree, Forward Checking 등 고급 기법 활용',
-    icon: Target as typeof Target,
-    color: 'text-blue-600',
-    timeComplexity: 'MEDIUM',
-    accuracy: 'HIGH',
-    bestFor: ['복잡한 제약조건', '중간 규모', '높은 정확도'],
-    minConstraints: 3,
-    maxStudents: 50,
-    isRecommended: true,
-  },
-  {
-    id: 'backtrack',
-    name: '🔄 백트래킹',
-    description: '체계적인 탐색으로 최적해를 찾는 전통적 방법',
-    icon: Cpu as typeof Cpu,
-    color: 'text-orange-600',
-    timeComplexity: 'VERY_HIGH',
-    accuracy: 'HIGH',
-    bestFor: ['소규모', '완벽한 해 필요', '시간 여유'],
-    maxStudents: 25,
-  },
-  {
     id: 'gender',
     name: '👫 남녀 구분',
-    description: '남녀 성비를 고려한 균형 잡힌 배치',
+    description: 'N쌍의 남녀 짝 우선 배치 후 나머지 랜덤 배치',
     icon: Users as typeof Users,
     color: 'text-pink-600',
     timeComplexity: 'LOW',
     accuracy: 'MEDIUM',
-    bestFor: ['성별 균형', '전통적 배치', '단순한 규칙'],
-    isRecommended: true,
+    bestFor: ['남녀 짝 배치', '성별 균형', '간단한 규칙'],
+    isRecommended: false,
   },
   {
     id: 'adaptive_random_subtle',
@@ -139,7 +116,7 @@ const ALGORITHM_OPTIONS: AlgorithmOption[] = [
     timeComplexity: 'LOW',
     accuracy: 'HIGH',
     bestFor: ['안정적 랜덤성', '약간의 변화', '예측 가능한 결과'],
-    isNew: true,
+    isNew: false,
   },
   {
     id: 'adaptive_random_balanced',
@@ -151,7 +128,7 @@ const ALGORITHM_OPTIONS: AlgorithmOption[] = [
     accuracy: 'HIGH',
     bestFor: ['균형잡힌 랜덤성', '다양한 결과', '흥미로운 패턴'],
     isRecommended: true,
-    isNew: true,
+    isNew: false,
   },
   {
     id: 'adaptive_random_creative',
@@ -162,7 +139,8 @@ const ALGORITHM_OPTIONS: AlgorithmOption[] = [
     timeComplexity: 'MEDIUM',
     accuracy: 'MEDIUM',
     bestFor: ['창의적 배치', '다양성 추구', '새로운 패턴'],
-    isNew: true,
+    isRecommended: true,
+    isNew: false,
   },
   {
     id: 'adaptive_random_wild',
@@ -173,7 +151,7 @@ const ALGORITHM_OPTIONS: AlgorithmOption[] = [
     timeComplexity: 'LOW',
     accuracy: 'LOW',
     bestFor: ['최대 다양성', '파격적 배치', '실험적 시도'],
-    isNew: true,
+    isNew: false,
   },
 ];
 
@@ -185,11 +163,15 @@ export const PlacementControls: React.FC = () => {
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(false);
   const [placementProgress, setPlacementProgress] = useState<PlacementProgress | null>(null);
   const [qualityMetrics, setQualityMetrics] = useState<QualityMetrics | null>(null);
+  const [pairCount, setPairCount] = useState<number>(0);
   const [adaptiveRandomOptions, setAdaptiveRandomOptions] = useState({
     generateMultiple: 3,  // 여러 후보 중 최고 선택
     seed: 0,             // 시드 값 (0이면 랜덤)
     customRandomness: 50, // 커스텀 랜덤성 (0-100)
   });
+  // 기존 state 변수들 아래에 추가
+  const [enableRetry, setEnableRetry] = useState(false);
+  const [retryProgress, setRetryProgress] = useState<{attempt: number, maxAttempts: number} | null>(null);
 
   // 통계 계산
   const availableSeats = getAvailableSeats(state.classroom);
@@ -216,16 +198,7 @@ export const PlacementControls: React.FC = () => {
     const recommendations: AlgorithmType[] = [];
     
     // 기본 추천 (항상)
-    recommendations.push('advanced_heuristic', 'adaptive_random_balanced'); 
-    
-    // 제약조건 수에 따른 추천
-    if (totalConstraints === 0) {
-      recommendations.push('gender', 'adaptive_random_wild');
-    } else if (totalConstraints < 3) {
-      recommendations.push('adaptive_random_creative');
-    } else {
-      recommendations.push('backtrack');
-    }
+    recommendations.push('adaptive_random_balanced'); 
     
     return [...new Set(recommendations)];
   };
@@ -237,18 +210,27 @@ export const PlacementControls: React.FC = () => {
     available: boolean;
     reason?: string;
   } => {
-    if (algorithm.minConstraints && totalConstraints < algorithm.minConstraints) {
-      return {
-        available: false,
-        reason: `최소 ${algorithm.minConstraints}개의 제약조건 필요`
-      };
-    }
+    // 고급 휴리스틱의 minConstraints 조건 제거됨
+    // 백트래킹의 maxStudents 조건 제거됨
     
     if (algorithm.maxStudents && state.students.length > algorithm.maxStudents) {
       return {
         available: false,
         reason: `${algorithm.maxStudents}명 이하에서 권장`
       };
+    }
+    
+    // 남녀 구분 알고리즘 특별 조건 추가
+    if (algorithm.id === 'gender') {
+      const maleCount = state.students.filter(s => s.gender === 'male').length;
+      const femaleCount = state.students.filter(s => s.gender === 'female').length;
+      
+      if (maleCount === 0 || femaleCount === 0) {
+        return {
+          available: false,
+          reason: '남학생과 여학생이 모두 필요합니다'
+        };
+      }
     }
     
     return { available: true };
@@ -274,196 +256,121 @@ export const PlacementControls: React.FC = () => {
     setIsGenerating(true);
     setPlacementProgress(null);
     setQualityMetrics(null);
+    setRetryProgress(null);
     dispatch({ type: 'SET_LOADING', payload: true });
 
     try {
       await new Promise(resolve => setTimeout(resolve, 300));
 
-      let result;
       console.log(`🎯 선택된 알고리즘: ${selectedAlgorithm}`);
       
       const startTime = Date.now();
       
-      switch (selectedAlgorithm) {
-        case 'advanced_heuristic':
-          result = await generateAdvancedHeuristicPlacement(state.students, state.classroom, state.constraints);
-          break;
-        case 'backtrack':
-          result = await generateBacktrackingPlacement(state.students, state.classroom, state.constraints);
-          break;
-        case 'gender':
-          result = await generateGenderBalancedPlacement(state.students, state.classroom, state.constraints);
-          break;
-        case 'adaptive_random_subtle':
-          result = await generateAdaptiveRandomPlacement(
-            state.students, 
-            state.classroom, 
-            state.constraints,
-            { 
-              preset: 'subtle',
-              generateMultiple: adaptiveRandomOptions.generateMultiple,
-              seed: adaptiveRandomOptions.seed || undefined
-            }
-          );
-          break;
-          
-        case 'adaptive_random_balanced':
-          result = await generateAdaptiveRandomPlacement(
-            state.students, 
-            state.classroom, 
-            state.constraints,
-            { 
-              preset: 'balanced',
-              generateMultiple: adaptiveRandomOptions.generateMultiple,
-              seed: adaptiveRandomOptions.seed || undefined
-            }
-          );
-          break;
-          
-        case 'adaptive_random_creative':
-          result = await generateAdaptiveRandomPlacement(
-            state.students, 
-            state.classroom, 
-            state.constraints,
-            { 
-              preset: 'creative',
-              generateMultiple: adaptiveRandomOptions.generateMultiple,
-              seed: adaptiveRandomOptions.seed || undefined
-            }
-          );
-          break;
-          
-        case 'adaptive_random_wild':
-          result = await generateAdaptiveRandomPlacement(
-            state.students, 
-            state.classroom, 
-            state.constraints,
-            { 
-              preset: 'wild',
-              generateMultiple: adaptiveRandomOptions.generateMultiple,
-              seed: adaptiveRandomOptions.seed || undefined
-            }
-          );
-          break;
-
-        default:
-          result = await generateAdaptiveRandomPlacement(
-            state.students, 
-            state.classroom, 
-            state.constraints,
-            { 
-              preset: 'balanced',
-              generateMultiple: adaptiveRandomOptions.generateMultiple,
-              seed: adaptiveRandomOptions.seed || undefined
-            }
-          );
-      }
+      // 재시도 로직이 포함된 함수 사용
+      const { generatePlacementWithRetry } = await import('@/utils/seatingAlgorithm');
+      
+      const result = await generatePlacementWithRetry(
+        selectedAlgorithm,
+        state.students,
+        state.classroom,
+        state.constraints,
+        {
+          enableRetry,
+          maxRetries: 10,
+          onProgress: (attempt, maxAttempts) => {
+            setRetryProgress({ attempt, maxAttempts });
+          },
+          algorithmOptions: {
+            pairCount,
+            ...adaptiveRandomOptions
+          }
+        }
+      );
 
       const duration = Date.now() - startTime;
 
-      // 품질 메트릭 계산
-      const placementRate = (result.stats.placedStudents / state.students.length) * 100;
-      const constraintSatisfaction = totalConstraints > 0 ? 
-        ((totalConstraints - result.stats.constraintViolations) / totalConstraints) * 100 : 100;
-      
-      const qualityScore = (placementRate * 0.4 + constraintSatisfaction * 0.4 + 
-        Math.max(0, 100 - duration / 100) * 0.2);
-
-      let efficiency: QualityMetrics['efficiency'] = 'excellent';
-      if (qualityScore < 60) efficiency = 'poor';
-      else if (qualityScore < 75) efficiency = 'fair';
-      else if (qualityScore < 90) efficiency = 'good';
-
-      setQualityMetrics({
-        placementRate,
-        constraintSatisfaction,
-        executionTime: duration,
-        qualityScore,
-        efficiency
-      });
-
       if (result.success) {
-        dispatch({ type: 'SET_SEATING', payload: result.seating });
+        // 실제 위반 개수 계산 (배열 길이 기준)
+        const actualViolations = result.violations || [];
+        const { publicViolations, hiddenViolations } = categorizeViolations(actualViolations);
+        const hasPublicViolations = publicViolations.length > 0;
+        const hasHiddenViolations = hiddenViolations.length > 0;
         
-        // 배치 완료 후 학생 목록을 번호순으로 정렬
-        const sortedStudents = [...state.students].sort((a, b) => {
-          // 번호가 있는 학생들을 먼저 정렬
-          if (a.number && b.number) return a.number - b.number;
-          if (a.number && !b.number) return -1;
-          if (!a.number && b.number) return 1;
-          // 번호가 없는 학생들은 이름순으로 정렬
-          return a.name.localeCompare(b.name);
-        });
-
-        dispatch({ type: 'SET_STUDENTS', payload: sortedStudents });
-
+        // 숨겨진 제약조건만 위반된 경우 - 배치 결과 숨기고 오류 메시지
+        if (hasHiddenViolations && !hasPublicViolations) {
+          alert('배치 중 오류가 발생했습니다. 다시 시도해주세요.');
+          setLastResult(null); // 결과 숨김
+          return;
+        }
+        
+        // 정상적인 경우 - 배치 결과 표시
+        dispatch({ type: 'SET_SEATING', payload: result.seating });
         setLastResult({
           ...result,
-          duration,
-          algorithm: selectedAlgorithm
+          violations: publicViolations, // 공개 위반사항만 저장
+          stats: {
+            ...result.stats,
+            constraintViolations: publicViolations.length // 공개 위반 개수로 수정
+          }
         });
         
-        // 결과 메시지 생성
-        let message = result.message;
-        if (result.stats.unplacedStudents > 0) {
-          message += `\n\n⚠️ ${result.stats.unplacedStudents}명이 배치되지 않았습니다.`;
-        }
-        if (result.violations && result.violations.length > 0) {
-          const showAdvanced = localStorage.getItem('constraints_show_advanced') === 'true';
-          let filteredViolations = result.violations;
-          
-          if (!showAdvanced) {
-            // 거리 유지와 줄 제외 위반 필터링
-            filteredViolations = result.violations.filter((v: any) => 
-              v.type !== 'distance' && v.type !== 'row_exclusion'
-            );
-            
-            // 고급 제약조건 위반이 있었다면 일반적인 메시지로 대체
-            const hasAdvancedViolations = result.violations.some((v: any) => 
-              v.type === 'distance' || v.type === 'row_exclusion'
-            );
-            
-            if (hasAdvancedViolations && filteredViolations.length === 0) {
-              // 고급 제약조건만 위반된 경우
-              if (confirm('일부 조건을 만족하지 못했습니다.\n다시 배치를 시도하시겠습니까?')) {
-                // 재시도 로직은 여기에 추가 가능
-              }
-              return;
-            } else if (hasAdvancedViolations) {
-              // 기본 + 고급 제약조건 모두 위반된 경우
-              message += '\n\n일부 조건을 만족하지 못했습니다.';
-            }
-          }
-          
-          // 필터링된 위반 사항 표시
-          if (filteredViolations.length > 0) {
-            message += `\n\n제약조건 위반:\n${filteredViolations.slice(0, 3).map((v: any) => v.message).join('\n')}`;
-            if (filteredViolations.length > 3) {
-              message += `\n... 외 ${filteredViolations.length - 3}건 더`;
-            }
-          }
+        // 알림 메시지 생성
+        let message = `배치 완료! ${result.stats.placedStudents}/${state.students.length}명 배치됨`;
+        
+        // 재시도 정보 추가
+        if (enableRetry && retryProgress && retryProgress.attempt > 1) {
+          message += `\n(${retryProgress.attempt - 1}회 재시도 후 최적 결과)`;
         }
         
-        // 성공적으로 모든 학생이 배치된 경우
-        if (result.stats.unplacedStudents === 0 && (!result.violations || result.violations.length === 0)) {
-          message += '\n\n🎉 모든 학생이 제약조건을 만족하며 성공적으로 배치되었습니다!';
+        // 공개 제약조건 위반 상태에 따른 메시지
+        if (hasPublicViolations) {
+          message += `\n⚠️ 제약조건 ${publicViolations.length}건 위반`;
+          
+          // 공개 위반 세부사항 추가 (최대 3개)
+          const violationDetails = publicViolations.slice(0, 3).map(v => v.message).join('\n');
+          const remainingCount = publicViolations.length > 3 ? publicViolations.length - 3 : 0;
+          
+          message += `\n\n위반 내용:\n${violationDetails}`;
+          if (remainingCount > 0) {
+            message += `\n... 외 ${remainingCount}건 더`;
+          }
+        } else if (totalConstraints > 0) {
+          // 표시 가능한 제약조건만 계산 (거리유지, 줄제외 제외)
+          const visibleConstraints = state.constraints.pairRequired.length + 
+                                    state.constraints.pairProhibited.length;
+          if (visibleConstraints > 0) {
+            message += `\n✅ 모든 제약조건 만족`;
+          }
         }
-        
+        // 품질 메트릭 계산
+        const placementRate = (result.stats.placedStudents / state.students.length) * 100;
+        const visibleConstraints = state.constraints.pairRequired.length + 
+                                  state.constraints.pairProhibited.length;
+        const constraintSatisfaction = visibleConstraints > 0 ? 
+          ((visibleConstraints - publicViolations.length) / visibleConstraints) * 100 : 100;
+
+        setQualityMetrics({
+          placementRate,
+          constraintSatisfaction,
+          executionTime: duration,
+          qualityScore: (placementRate + constraintSatisfaction) / 2,
+          efficiency: duration < 1000 ? 'excellent' : duration < 3000 ? 'good' : duration < 5000 ? 'fair' : 'poor'
+        });
         alert(message);
       } else {
         alert(`배치 실패: ${result.message}`);
         setLastResult(result);
       }
+
+      
+
     } catch (error) {
       console.error('배치 생성 오류:', error);
-      // 오류 발생 시 기본 알고리즘으로 폴백
-      if (selectedAlgorithm !== 'advanced_heuristic') {
-        console.log('🔄 고급 휴리스틱으로 폴백');
-        return generateAdvancedHeuristicPlacement(state.students, state.classroom, state.constraints);
-      }
+      alert('배치 생성 중 오류가 발생했습니다.');
     } finally {
       setIsGenerating(false);
       setPlacementProgress(null);
+      setRetryProgress(null);
       dispatch({ type: 'SET_LOADING', payload: false });
     }
   };
@@ -643,76 +550,6 @@ export const PlacementControls: React.FC = () => {
         </div>
       )}
 
-      {/* 적응형 랜덤 옵션 설정 */}
-      {selectedAlgorithm.includes('adaptive_random') && showAdvancedOptions && (
-        <div className="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-lg p-4">
-          <h4 className="font-medium text-purple-900 mb-3">🎲 적응형 랜덤 배치 설정</h4>
-          <div className="space-y-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                후보 생성 수: {adaptiveRandomOptions.generateMultiple}개
-              </label>
-              <input
-                type="range"
-                min="1"
-                max="10"
-                step="1"
-                value={adaptiveRandomOptions.generateMultiple}
-                onChange={(e) => setAdaptiveRandomOptions(prev => ({ 
-                  ...prev, 
-                  generateMultiple: parseInt(e.target.value) 
-                }))}
-                className="w-full h-2 bg-purple-200 rounded-lg appearance-none cursor-pointer"
-              />
-              <div className="flex justify-between text-xs text-gray-500 mt-1">
-                <span>1개 (빠름)</span>
-                <span>5개 (균형)</span>
-                <span>10개 (최고품질)</span>
-              </div>
-              <p className="text-xs text-gray-600 mt-1">
-                여러 배치 후보를 생성한 후 가장 좋은 결과를 선택합니다
-              </p>
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                시드 값: {adaptiveRandomOptions.seed === 0 ? '랜덤' : adaptiveRandomOptions.seed}
-              </label>
-              <input
-                type="range"
-                min="0"
-                max="9999"
-                step="1"
-                value={adaptiveRandomOptions.seed}
-                onChange={(e) => setAdaptiveRandomOptions(prev => ({ 
-                  ...prev, 
-                  seed: parseInt(e.target.value) 
-                }))}
-                className="w-full h-2 bg-purple-200 rounded-lg appearance-none cursor-pointer"
-              />
-              <div className="flex justify-between text-xs text-gray-500 mt-1">
-                <span>0 (랜덤)</span>
-                <span>5000</span>
-                <span>9999 (고정)</span>
-              </div>
-              <p className="text-xs text-gray-600 mt-1">
-                0이면 매번 다른 결과, 고정값이면 항상 같은 결과를 얻습니다
-              </p>
-            </div>
-            
-            <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
-              <h5 className="text-sm font-medium text-yellow-900 mb-1">💡 랜덤성 모드 설명</h5>
-              <div className="text-xs text-yellow-800 space-y-1">
-                <div><strong>미묘:</strong> 95% 휴리스틱 + 5% 랜덤 (안정적)</div>
-                <div><strong>균형:</strong> 70% 휴리스틱 + 30% 랜덤 (추천)</div>
-                <div><strong>창의적:</strong> 50% 휴리스틱 + 50% 랜덤 (다양함)</div>
-                <div><strong>와일드:</strong> 20% 휴리스틱 + 80% 랜덤 (파격적)</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* 제약조건 상태 체크 */}
       {totalConstraints > 0 && (
         <div className={`border rounded-lg p-3 ${
@@ -777,30 +614,120 @@ export const PlacementControls: React.FC = () => {
             {showAdvancedOptions ? '간단히 보기' : '고급 설정'}
           </button>
         </div>
-        
-        {/* 추천 알고리즘 */}
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-          <div className="text-sm font-medium text-blue-900 mb-2">💡 상황별 추천</div>
-          <div className="flex flex-wrap gap-2">
-            {recommendedAlgorithms.slice(0, 3).map(algId => {
-              const alg = ALGORITHM_OPTIONS.find(a => a.id === algId);
-              if (!alg) return null;
-              return (
-                <button
-                  key={algId}
-                  onClick={() => setSelectedAlgorithm(algId)}
-                  className={`px-3 py-1 text-xs rounded-full transition-colors ${
-                    selectedAlgorithm === algId
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-blue-100 text-blue-800 hover:bg-blue-200'
-                  }`}
-                >
-                  {alg.name}
-                </button>
-              );
-            })}
+
+        {/* 고급 옵션 - showAdvancedOptions가 true일 때만 표시 */}
+        {showAdvancedOptions && (
+          <div className="space-y-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <h4 className="font-medium text-gray-900 flex items-center gap-2">
+              <Settings2 className="w-4 h-4" />
+              고급 옵션
+            </h4>
+            
+            {/* 제약조건 재시도 옵션 */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  id="enable-retry"
+                  checked={enableRetry}
+                  onChange={(e) => setEnableRetry(e.target.checked)}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label htmlFor="enable-retry" className="text-sm font-medium text-gray-700 cursor-pointer">
+                  제약조건 위반 시 재시도 (최대 10회)
+                </label>
+              </div>
+              
+              {enableRetry && (
+                <div className="ml-7 p-3 bg-blue-50 border border-blue-200 rounded text-xs text-blue-800">
+                  <div className="font-medium mb-1">📢 재시도 기능 안내</div>
+                  <div>• 제약조건을 위반하면 자동으로 재시도합니다</div>
+                  <div>• 최대 10번까지 시도하여 최적의 결과를 찾습니다</div>
+                  <div>• 완벽한 결과를 찾으면 조기 종료됩니다</div>
+                </div>
+              )}
+            </div>
+
+            {/* 적응형 랜덤 옵션 설정 */}
+            {selectedAlgorithm.includes('adaptive_random') && showAdvancedOptions && (
+              <div className="bg-gradient-to-r from-purple-50 to-pink-50 border border-purple-200 rounded-lg p-4">
+                <h4 className="font-medium text-purple-900 mb-3">🎲 적응형 랜덤 배치 설정</h4>
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      후보 생성 수: {adaptiveRandomOptions.generateMultiple}개
+                    </label>
+                    <input
+                      type="range"
+                      min="1"
+                      max="10"
+                      step="1"
+                      value={adaptiveRandomOptions.generateMultiple}
+                      onChange={(e) => setAdaptiveRandomOptions(prev => ({ 
+                        ...prev, 
+                        generateMultiple: parseInt(e.target.value) 
+                      }))}
+                      className="w-full h-2 bg-purple-200 rounded-lg appearance-none cursor-pointer"
+                    />
+                    <div className="flex justify-between text-xs text-gray-500 mt-1">
+                      <span>1개 (빠름)</span>
+                      <span>5개 (균형)</span>
+                      <span>10개 (최고품질)</span>
+                    </div>
+                    <p className="text-xs text-gray-600 mt-1">
+                      여러 배치 후보를 생성한 후 가장 좋은 결과를 선택합니다
+                    </p>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      시드 값: {adaptiveRandomOptions.seed === 0 ? '랜덤' : adaptiveRandomOptions.seed}
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="9999"
+                      step="1"
+                      value={adaptiveRandomOptions.seed}
+                      onChange={(e) => setAdaptiveRandomOptions(prev => ({ 
+                        ...prev, 
+                        seed: parseInt(e.target.value) 
+                      }))}
+                      className="w-full h-2 bg-purple-200 rounded-lg appearance-none cursor-pointer"
+                    />
+                    <div className="flex justify-between text-xs text-gray-500 mt-1">
+                      <span>0 (랜덤)</span>
+                      <span>5000</span>
+                      <span>9999 (고정)</span>
+                    </div>
+                    <p className="text-xs text-gray-600 mt-1">
+                      0이면 매번 다른 결과, 고정값이면 항상 같은 결과를 얻습니다
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
+        )}
+
+        {/* 재시도 진행 상황 표시 */}
+        {retryProgress && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+            <div className="flex items-center gap-2 text-yellow-800">
+              <Shuffle className="w-4 h-4 animate-spin" />
+              <span className="font-medium">재시도 중...</span>
+            </div>
+            <div className="text-sm text-yellow-700 mt-1">
+              시도 {retryProgress.attempt}/{retryProgress.maxAttempts} - 더 나은 배치를 찾는 중입니다
+            </div>
+            <div className="w-full bg-yellow-200 rounded-full h-2 mt-2">
+              <div 
+                className="bg-yellow-500 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${(retryProgress.attempt / retryProgress.maxAttempts) * 100}%` }}
+              ></div>
+            </div>
+          </div>
+        )}
 
         {/* 알고리즘 목록 */}
         <div className="space-y-2">
@@ -903,6 +830,39 @@ export const PlacementControls: React.FC = () => {
         </div>
       </div>
 
+      {selectedAlgorithm === 'gender' && (
+        <div className="mt-4 p-4 bg-pink-50 border border-pink-200 rounded-lg">
+          <h4 className="font-medium text-pink-900 mb-2">👫 남녀 짝 배치 설정</h4>
+          <div className="flex items-center gap-3">
+            <label className="text-sm font-medium text-pink-800">
+              짝으로 배치할 남녀 쌍 수:
+            </label>
+            <input
+              type="number"
+              min="0"
+              max={Math.min(
+                state.students.filter(s => s.gender === 'male').length,
+                state.students.filter(s => s.gender === 'female').length
+              )}
+              value={pairCount}
+              onChange={(e) => setPairCount(Math.max(0, parseInt(e.target.value) || 0))}
+              className="w-20 px-2 py-1 border border-pink-300 rounded text-center"
+            />
+            <span className="text-xs text-pink-600">
+              (최대 {Math.min(
+                state.students.filter(s => s.gender === 'male').length,
+                state.students.filter(s => s.gender === 'female').length
+              )}쌍)
+            </span>
+          </div>
+          <p className="text-xs text-pink-700 mt-2">
+            • {pairCount}쌍({pairCount * 2}명)의 남녀가 짝으로 배치됩니다<br/>
+            • 나머지 {state.students.length - (pairCount * 2)}명은 랜덤 배치됩니다<br/>
+            • 기존 좌석 성별 제약은 초기화됩니다
+          </p>
+        </div>
+      )}
+
       {/* 실행 버튼들 */}
       <div className="space-y-3">
         <Button
@@ -938,7 +898,7 @@ export const PlacementControls: React.FC = () => {
         </div>
       </div>
 
-      {/* 배치 결과 정보 (개선됨) */}
+      {/* 배치 결과 정보 */}
       {lastResult && (
         <div className={`border rounded-lg p-4 ${
           lastResult.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'
@@ -949,6 +909,17 @@ export const PlacementControls: React.FC = () => {
             {lastResult.success ? <CheckCircle className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
             배치 결과
           </h4>
+          {/* 재시도 정보 표시 */}
+          {enableRetry && lastResult.message && lastResult.message.includes('재시도') && (
+            <div className="mb-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
+              <div className="font-medium text-blue-800 flex items-center gap-1">
+                <Shuffle className="w-3 h-3" />
+                재시도 완료
+              </div>
+              <div className="text-blue-700">여러 시도 중 가장 좋은 결과를 선택했습니다</div>
+            </div>
+          )}
+          {/* 배치 결과 */}
           <div className={`text-sm space-y-1 ${
             lastResult.success ? 'text-green-800' : 'text-red-800'
           }`}>
@@ -1019,7 +990,7 @@ export const PlacementControls: React.FC = () => {
               </div>
             )}
             
-            {lastResult.violations && lastResult.violations.length > 0 && (
+            {lastResult && lastResult.violations && lastResult.violations.length > 0 && (
               <div className="mt-3 p-2 bg-orange-50 border border-orange-200 rounded text-xs">
                 <div className="font-medium text-orange-800 flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3" />
@@ -1105,24 +1076,25 @@ export const PlacementControls: React.FC = () => {
           {totalConstraints === 0 && (
             <div className="font-medium text-green-700">💡 제약조건이 없습니다 → 성별 구분 또는 적응형 랜덤 추천</div>
           )}
-          {totalConstraints > 0 && totalConstraints < 3 && (
-            <div className="font-medium text-blue-700">💡 간단한 제약조건 → 고급 휴리스틱 추천</div>
+          {totalConstraints > 0 && totalConstraints < 5 && (
+            <div className="font-medium text-blue-700">💡 제약조건이 적습니다 → 적응형 랜덤(창의적) 추천</div>
           )}
-          {totalConstraints >= 3 && (
-            <div className="font-medium text-red-700">💡 복잡한 제약조건 → 백트래킹 추천</div>
+          {totalConstraints >= 5 && (
+            <div className="font-medium text-orange-700">💡 복잡한 제약조건 → 적응형 랜덤(균형) 또는 (미묘) 추천</div>
           )}
           <div className="text-xs mt-2 pt-2 border-t border-blue-200">
             <strong>⭐ 추천:</strong> 기본적인 상황에서는 적응형 랜덤(창의적)을 추천합니다. 
+            남녀 짝 배치가 필요한 경우 남녀 구분 알고리즘을 사용하세요.
           </div>
         </div>
       </div>
 
-      {/* 적응형 랜덤 알고리즘 소개 */}
+      {/* 알고리즘 소개 */}
       <div className="bg-gradient-to-r from-pink-50 to-purple-50 border border-pink-200 rounded-lg p-4">
-        <h4 className="font-medium text-pink-900 mb-2">🎲 새로운 적응형 랜덤 알고리즘</h4>
+        <h4 className="font-medium text-pink-900 mb-2">🎲 알고리즘 소개</h4>
         <div className="text-sm text-pink-800 space-y-2">
           <p>
-            <strong>혁신적인 랜덤성:</strong> 제약조건을 지키면서도 예측 불가능한 흥미로운 배치를 생성합니다.
+            <strong>적응형 랜덤:</strong> 제약조건을 지키면서도 예측 불가능한 흥미로운 배치를 생성합니다.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
             <div>🎯 <strong>미묘한 랜덤성:</strong> 안정적이면서 약간의 변화</div>
@@ -1130,10 +1102,9 @@ export const PlacementControls: React.FC = () => {
             <div>🎨 <strong>창의적 랜덤성:</strong> 다양하고 창의적인 패턴</div>
             <div>🌪️ <strong>와일드 랜덤성:</strong> 완전히 예측 불가능한 배치</div>
           </div>
-          <div className="bg-white bg-opacity-50 rounded p-2 text-xs">
-            <strong>💡 언제 사용할까요?</strong> 기존 패턴에서 벗어나고 싶을 때, 학생들에게 새로운 경험을 주고 싶을 때, 
-            또는 단순히 재미있는 배치를 원할 때 사용하세요!
-          </div>
+          <p>
+            <strong>남녀 구분 알고리즘:</strong> 지정된 수의 남녀 쌍을 우선 배치하고, 나머지는 랜덤으로 배치합니다.
+          </p>
         </div>
       </div>
     </div>
