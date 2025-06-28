@@ -1,5 +1,5 @@
 //src/utils/seatingAlgorithm.ts
-import { Student, ClassroomConfig, Constraints, SeatingArrangement, Position, PlacementResult } from '@/types';
+import { Student, ClassroomConfig, Constraints, SeatingArrangement, Position, PlacementResult, FixedStudentPlacement } from '@/types';
 import { 
   isPairPosition, 
   calculateDistance, 
@@ -29,6 +29,37 @@ export const getAvailableSeats = (classroom: ClassroomConfig): Position[] => {
   }
   
   return seats;
+};
+
+/**
+ * 고정된 학생들을 제외한 사용 가능한 좌석 반환
+ */
+export const getAvailableSeatsExcludingFixed = (
+  classroom: ClassroomConfig, 
+  fixedPlacements: FixedStudentPlacement[]
+): Position[] => {
+  const allAvailableSeats = getAvailableSeats(classroom);
+  const fixedPositions = new Set(
+    fixedPlacements.map(fp => `${fp.position.row}-${fp.position.col}`)
+  );
+  
+  return allAvailableSeats.filter(seat => 
+    !fixedPositions.has(`${seat.row}-${seat.col}`)
+  );
+};
+
+/**
+ * 고정 배치를 SeatingArrangement 형태로 변환
+ */
+export const createSeatingFromFixed = (fixedPlacements: FixedStudentPlacement[]): SeatingArrangement => {
+  const seating: SeatingArrangement = {};
+  
+  fixedPlacements.forEach(fp => {
+    const posKey = `${fp.position.row}-${fp.position.col}`;
+    seating[posKey] = fp.studentId;
+  });
+  
+  return seating;
 };
 
 /**
@@ -145,24 +176,61 @@ export const getValidSeatsForStudent = (
 };
 
 /**
- * 제약조건 기반 배치 (고급 휴리스틱 사용)
+ * 제약조건 기반 배치 (고급 휴리스틱 사용) - 고정 학생 지원
  */
 export const generateConstraintBasedPlacement = async (
   students: Student[], 
   classroom: ClassroomConfig, 
-  constraints: Constraints
+  constraints: Constraints,
+  fixedPlacements: FixedStudentPlacement[] = []
 ): Promise<PlacementResult> => {
-  return await generateConstraintFocusedHeuristicPlacement(students, classroom, constraints);
+  // 고정된 학생들 제외하고 배치할 학생들만 필터링
+  const fixedStudentIds = new Set(fixedPlacements.map(fp => fp.studentId));
+  const studentsToPlace = students.filter(s => !fixedStudentIds.has(s.id));
+  
+  // 고정 배치를 초기 시팅으로 설정
+  const initialSeating = createSeatingFromFixed(fixedPlacements);
+  
+  // 고급 휴리스틱으로 나머지 학생들 배치
+  const result = await generateConstraintFocusedHeuristicPlacement(
+    studentsToPlace, 
+    classroom, 
+    constraints
+  );
+  
+  // 고정된 학생들을 결과에 병합
+  const finalSeating = { ...initialSeating, ...result.seating };
+  
+  // 전체 학생에 대해 제약조건 재검증
+  const validation = validateAllConstraints(finalSeating, students, classroom, constraints);
+  
+  // 통계 업데이트
+  const totalPlaced = Object.keys(finalSeating).length;
+  const unplaced = students.length - totalPlaced;
+  
+  return {
+    ...result,
+    seating: finalSeating,
+    message: `제약조건 기반 배치: ${totalPlaced}/${students.length}명 배치 (고정 ${fixedPlacements.length}명 포함)`,
+    violations: validation.violations,
+    stats: {
+      ...result.stats,
+      placedStudents: totalPlaced,
+      unplacedStudents: unplaced,
+      constraintViolations: validation.violations.length
+    }
+  };
 };
 
 /**
- * 남녀 구분 배치 - N쌍 우선 배치 + 나머지 랜덤 배치
+ * 남녀 구분 배치 - N쌍 우선 배치 + 나머지 랜덤 배치 (고정 학생 지원)
  */
 export const generateGenderBalancedPlacement = async (
   students: Student[], 
   classroom: ClassroomConfig,
   constraints: Constraints = { pairRequired: [], pairProhibited: [], distanceRules: [], rowExclusions: [] },
-  pairCount: number = 0
+  pairCount: number = 0,
+  fixedPlacements: FixedStudentPlacement[] = []
 ): Promise<PlacementResult> => {
 
   if (students.length === 0) {
@@ -174,31 +242,45 @@ export const generateGenderBalancedPlacement = async (
     };
   }
 
-  // 1. 좌석 성별 제약 초기화 (사용 안함 설정은 유지)
+  // 1. 고정된 학생들과 배치할 학생들 분리
+  const fixedStudentIds = new Set(fixedPlacements.map(fp => fp.studentId));
+  const studentsToPlace = students.filter(s => !fixedStudentIds.has(s.id));
+  
+  // 2. 초기 배치 (고정된 학생들)
+  const seating: SeatingArrangement = createSeatingFromFixed(fixedPlacements);
+  const placedStudents = new Set<string>(fixedStudentIds);
+
+  // 3. 좌석 성별 제약 초기화 (사용 안함 설정은 유지)
   const updatedClassroom: ClassroomConfig = {
     ...classroom,
     seatGenderConstraints: [] // 성별 제약 모두 제거
   };
 
-  const availableSeats = getAvailableSeats(updatedClassroom);
-  const seating: SeatingArrangement = {};
+  // 4. 고정되지 않은 사용 가능한 좌석들
+  const availableSeats = getAvailableSeatsExcludingFixed(updatedClassroom, fixedPlacements);
 
-  // 2. 남녀 학생 분류 및 랜덤 셔플 추가
-  const maleStudents = [...students.filter(s => s.gender === 'male')].sort(() => Math.random() - 0.5);
-  const femaleStudents = [...students.filter(s => s.gender === 'female')].sort(() => Math.random() - 0.5);
+  // 5. 배치할 남녀 학생 분류 및 랜덤 셔플
+  const maleStudents = [...studentsToPlace.filter(s => s.gender === 'male')].sort(() => Math.random() - 0.5);
+  const femaleStudents = [...studentsToPlace.filter(s => s.gender === 'female')].sort(() => Math.random() - 0.5);
   
-  // 3. 실제 배치 가능한 쌍 수 계산
+  // 6. 실제 배치 가능한 쌍 수 계산
   const maxPossiblePairs = Math.min(maleStudents.length, femaleStudents.length);
   const actualPairCount = Math.min(pairCount, maxPossiblePairs);
 
-  // 4. 짝 좌석 찾기
-  const pairSeats = findAvailablePairSeats(updatedClassroom);
+  // 7. 고정되지 않은 짝 좌석 찾기
+  const allPairSeats = findAvailablePairSeats(updatedClassroom);
+  const availablePairSeats = allPairSeats.filter(pair => {
+    const [leftSeat, rightSeat] = pair;
+    const leftKey = `${leftSeat.row}-${leftSeat.col}`;
+    const rightKey = `${rightSeat.row}-${rightSeat.col}`;
+    // 고정된 학생이 앉아있지 않은 짝 좌석만 선택
+    return !seating[leftKey] && !seating[rightKey];
+  });
 
   // 짝 좌석 랜덤 셔플
-  const shuffledPairSeats = [...pairSeats].sort(() => Math.random() - 0.5);
+  const shuffledPairSeats = [...availablePairSeats].sort(() => Math.random() - 0.5);
   
-  // 5. N쌍의 남녀 우선 배치
-  const placedStudents = new Set<string>();
+  // 8. N쌍의 남녀 우선 배치
   let pairsPlaced = 0;
 
   for (let i = 0; i < actualPairCount && pairsPlaced < actualPairCount; i++) {
@@ -245,8 +327,8 @@ export const generateGenderBalancedPlacement = async (
     }
   }
 
-  // 6. 나머지 학생들 랜덤 배치
-  const remainingStudents = students.filter(s => !placedStudents.has(s.id));
+  // 9. 나머지 학생들 랜덤 배치
+  const remainingStudents = studentsToPlace.filter(s => !placedStudents.has(s.id));
   const usedPositions = new Set(Object.keys(seating));
   const remainingSeats = availableSeats.filter(seat => 
     !usedPositions.has(`${seat.row}-${seat.col}`)
@@ -267,10 +349,10 @@ export const generateGenderBalancedPlacement = async (
     }
   }
 
-  // 7. 제약조건 검증 및 경고
+  // 10. 제약조건 검증 및 경고 (전체 학생 대상)
   const validation = validateAllConstraints(seating, students, updatedClassroom, constraints);
   
-  // 8. 제약조건 위반 시 경고 처리
+  // 11. 제약조건 위반 시 경고 처리
   if (validation.violations.length > 0) {
     // 기존과 동일한 방식으로 alert 표시
     const violationMessages = validation.violations.map(v => v.message).slice(0, 3);
@@ -287,17 +369,19 @@ export const generateGenderBalancedPlacement = async (
     }, 100);
   }
 
-  // 9. 결과 생성
+  // 12. 결과 생성
+  const totalAvailableSeats = getAvailableSeats(updatedClassroom).length;
   const stats = {
     totalSeats: updatedClassroom.rows * updatedClassroom.cols,
-    availableSeats: availableSeats.length,
-    disabledSeats: (updatedClassroom.rows * updatedClassroom.cols) - availableSeats.length,
+    availableSeats: totalAvailableSeats,
+    disabledSeats: (updatedClassroom.rows * updatedClassroom.cols) - totalAvailableSeats,
     placedStudents: placedStudents.size,
     unplacedStudents: students.length - placedStudents.size,
     constraintViolations: validation.violations.length
   };
 
-  const message = `남녀 짝 배치: ${pairsPlaced}쌍 배치, 전체 ${stats.placedStudents}/${students.length}명 배치됨`;
+  const fixedText = fixedPlacements.length > 0 ? ` (고정 ${fixedPlacements.length}명 포함)` : '';
+  const message = `남녀 짝 배치: ${pairsPlaced}쌍 배치, 전체 ${stats.placedStudents}/${students.length}명 배치됨${fixedText}`;
 
   return {
     success: placedStudents.size === students.length,
@@ -400,7 +484,7 @@ export const validateSeatingArrangement = (
 };
 
 /**
- * 제약조건 재시도 포함 배치 실행
+ * 제약조건 재시도 포함 배치 실행 (고정 학생 지원)
  */
 export const generatePlacementWithRetry = async (
   algorithmType: string,
@@ -412,9 +496,11 @@ export const generatePlacementWithRetry = async (
     maxRetries?: number;
     onProgress?: (attempt: number, maxAttempts: number) => void;
     algorithmOptions?: any;
+    fixedPlacements?: FixedStudentPlacement[]; // 새로 추가
   }
 ): Promise<PlacementResult> => {
   const maxRetries = options.maxRetries || 10;
+  const fixedPlacements = options.fixedPlacements || [];
   let bestResult: PlacementResult | null = null;
   let attempt = 1;
 
@@ -433,7 +519,16 @@ export const generatePlacementWithRetry = async (
           students, 
           classroom, 
           constraints,
-          options.algorithmOptions?.pairCount || 0
+          options.algorithmOptions?.pairCount || 0,
+          fixedPlacements // 고정 배치 전달
+        );
+        break;
+      case 'constraint':
+        result = await generateConstraintBasedPlacement(
+          students,
+          classroom,
+          constraints,
+          fixedPlacements // 고정 배치 전달
         );
         break;
       case 'adaptive_random_subtle':
@@ -448,6 +543,7 @@ export const generatePlacementWithRetry = async (
           constraints,
           {
             ...options.algorithmOptions,
+            fixedPlacements, // 고정 배치 전달
             seed: options.algorithmOptions?.seed === 0 ? Math.floor(Math.random() * 1000000) + attempt : options.algorithmOptions?.seed + attempt
           }
         );

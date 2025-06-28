@@ -1,12 +1,12 @@
 //src/utils/backtrackingAlgorithm.ts
-import { Student, ClassroomConfig, Constraints, SeatingArrangement, Position, PlacementResult, ConstraintViolation } from '@/types';
+import { Student, ClassroomConfig, Constraints, SeatingArrangement, Position, PlacementResult, ConstraintViolation, FixedStudentPlacement } from '@/types';
 import { 
   isPairPosition, 
   calculateDistance, 
   validateAllConstraints,
   findStudentPosition
 } from './constraintValidator';
-import { getAvailableSeats, isValidStudentPlacement } from './seatingAlgorithm';
+import { getAvailableSeats, isValidStudentPlacement, createSeatingFromFixed, getAvailableSeatsExcludingFixed } from './seatingAlgorithm';
 
 interface BacktrackingState {
   seating: SeatingArrangement;
@@ -52,8 +52,10 @@ export class BacktrackingPlacementEngine {
   private constraintGraph: ConstraintGraph;
   private maxDepth: number;
   private maxAttempts: number;
-  private startTime: number = 0; // 초기값 설정
-  private timeLimit: number; // 최대 실행 시간 (ms)
+  private startTime: number = 0;
+  private timeLimit: number;
+  private fixedPlacements: FixedStudentPlacement[]; // 새로 추가
+  private fixedSeating: SeatingArrangement; // 새로 추가
 
   constructor(
     classroom: ClassroomConfig, 
@@ -62,14 +64,17 @@ export class BacktrackingPlacementEngine {
       maxDepth?: number;
       maxAttempts?: number;
       timeLimit?: number;
+      fixedPlacements?: FixedStudentPlacement[]; // 새로 추가
     } = {}
   ) {
     this.classroom = classroom;
     this.constraints = constraints;
-    this.availableSeats = getAvailableSeats(classroom);
+    this.fixedPlacements = options.fixedPlacements || []; // 새로 추가
+    this.fixedSeating = createSeatingFromFixed(this.fixedPlacements); // 새로 추가
+    this.availableSeats = getAvailableSeatsExcludingFixed(classroom, this.fixedPlacements); // 수정
     this.maxDepth = options.maxDepth || 1000;
     this.maxAttempts = options.maxAttempts || 10000;
-    this.timeLimit = options.timeLimit || 30000; // 30초
+    this.timeLimit = options.timeLimit || 30000;
     this.constraintGraph = this.buildConstraintGraph();
   }
 
@@ -156,31 +161,37 @@ export class BacktrackingPlacementEngine {
   public async generatePlacement(students: Student[]): Promise<PlacementResult> {
     this.startTime = Date.now();
     
-    // 학생 정보를 그래프에 연결
-    students.forEach(student => {
+    // 고정된 학생들 제외하고 배치할 학생들만 필터링
+    const fixedStudentIds = new Set(this.fixedPlacements.map(fp => fp.studentId));
+    const studentsToPlace = students.filter(s => !fixedStudentIds.has(s.id));
+    
+    // 학생 정보를 그래프에 연결 (배치할 학생들만)
+    studentsToPlace.forEach(student => {
       const node = this.constraintGraph.studentNodes.get(student.id);
       if (node) {
         node.student = student;
       }
     });
 
-    // 초기 상태 생성
+    // 초기 상태 생성 (고정 배치 포함)
     const initialState: BacktrackingState = {
-      seating: {},
-      placedStudents: new Set(),
-      unplacedStudents: [...students],
+      seating: { ...this.fixedSeating }, // 고정된 학생들을 초기 배치에 포함
+      placedStudents: new Set(fixedStudentIds), // 고정된 학생들을 배치됨으로 설정
+      unplacedStudents: [...studentsToPlace], // 배치할 학생들만
       depth: 0,
       violations: []
     };
 
     console.log('🔄 백트래킹 배치 시작:', {
       students: students.length,
+      studentsToPlace: studentsToPlace.length,
+      fixedStudents: this.fixedPlacements.length,
       availableSeats: this.availableSeats.length,
       constraints: this.constraintGraph.constraintEdges.length
     });
 
     // 제약조건이 있는 학생들을 우선순위 순으로 정렬
-    const sortedStudents = this.sortStudentsByPriority(students);
+    const sortedStudents = this.sortStudentsByPriority(studentsToPlace);
     initialState.unplacedStudents = sortedStudents;
 
     let bestResult = await this.backtrack(initialState);
@@ -194,8 +205,8 @@ export class BacktrackingPlacementEngine {
       // 다른 순서로 시도
       const shuffledStudents = this.shuffleArray([...sortedStudents]);
       const newState: BacktrackingState = {
-        seating: {},
-        placedStudents: new Set(),
+        seating: { ...this.fixedSeating }, // 고정 배치로 다시 시작
+        placedStudents: new Set(fixedStudentIds), // 고정된 학생들만
         unplacedStudents: shuffledStudents,
         depth: 0,
         violations: []
@@ -221,7 +232,8 @@ export class BacktrackingPlacementEngine {
       finalResult: {
         placed: bestResult.stats.placedStudents,
         unplaced: bestResult.stats.unplacedStudents,
-        violations: bestResult.stats.constraintViolations
+        violations: bestResult.stats.constraintViolations,
+        fixed: this.fixedPlacements.length
       }
     });
 
@@ -523,6 +535,7 @@ export class BacktrackingPlacementEngine {
    * 결과 생성
    */
   private createResult(state: BacktrackingState, message: string): PlacementResult {
+    // 전체 학생 목록 재구성
     const allStudents = [...Array.from(state.placedStudents), ...state.unplacedStudents.map(s => s.id)];
     const studentsArray = allStudents.map(id => 
       state.unplacedStudents.find(s => s.id === id) || 
@@ -539,16 +552,19 @@ export class BacktrackingPlacementEngine {
     const totalSeats = this.classroom.rows * this.classroom.cols;
     const placedCount = Object.keys(state.seating).length;
     const unplacedCount = state.unplacedStudents.length;
+    const totalStudents = placedCount + unplacedCount;
+
+    const fixedText = this.fixedPlacements.length > 0 ? ` (고정 ${this.fixedPlacements.length}명 포함)` : '';
 
     return {
       success: unplacedCount === 0,
       seating: state.seating,
-      message: `백트래킹 배치: ${message} (${placedCount}/${placedCount + unplacedCount}명 배치)`,
+      message: `백트래킹 배치: ${message} (${placedCount}/${totalStudents}명 배치)${fixedText}`,
       violations: validation.violations,
       stats: {
         totalSeats,
-        availableSeats: this.availableSeats.length,
-        disabledSeats: totalSeats - this.availableSeats.length,
+        availableSeats: this.availableSeats.length + this.fixedPlacements.length, // 전체 사용 가능 좌석
+        disabledSeats: totalSeats - (this.availableSeats.length + this.fixedPlacements.length),
         placedStudents: placedCount,
         unplacedStudents: unplacedCount,
         constraintViolations: validation.violations.length
@@ -575,29 +591,36 @@ export class BacktrackingPlacementEngine {
 export const generateBacktrackingPlacement = async (
   students: Student[], 
   classroom: ClassroomConfig,
-  constraints: Constraints = { pairRequired: [], pairProhibited: [], distanceRules: [], rowExclusions: [] }
+  constraints: Constraints = { pairRequired: [], pairProhibited: [], distanceRules: [], rowExclusions: [] },
+  fixedPlacements: FixedStudentPlacement[] = [] // 새로 추가
 ): Promise<PlacementResult> => {
   
   if (students.length === 0) {
     return {
       success: false,
-      seating: {},
+      seating: createSeatingFromFixed(fixedPlacements), // 고정 배치만 반환
       message: '배치할 학생이 없습니다.',
       stats: {
         totalSeats: classroom.rows * classroom.cols,
         availableSeats: getAvailableSeats(classroom).length,
         disabledSeats: 0,
-        placedStudents: 0,
+        placedStudents: fixedPlacements.length,
         unplacedStudents: 0,
         constraintViolations: 0
       }
     };
   }
 
+  // 배치할 학생 수에 따른 파라미터 조정
+  const studentsToPlace = students.filter(s => 
+    !fixedPlacements.some(fp => fp.studentId === s.id)
+  );
+
   const engine = new BacktrackingPlacementEngine(classroom, constraints, {
-    maxDepth: Math.min(1000, students.length * 10),
-    maxAttempts: Math.min(50, students.length),
-    timeLimit: students.length > 30 ? 45000 : 30000 // 학생이 많으면 시간 더 할당
+    maxDepth: Math.min(1000, studentsToPlace.length * 10),
+    maxAttempts: Math.min(50, studentsToPlace.length),
+    timeLimit: studentsToPlace.length > 30 ? 45000 : 30000,
+    fixedPlacements // 고정 배치 전달
   });
 
   return await engine.generatePlacement(students);

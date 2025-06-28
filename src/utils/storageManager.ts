@@ -7,9 +7,10 @@ const STORAGE_KEYS = {
   CLASSROOM: 'classroom_seating_classroom',
   SEATING: 'classroom_seating_current',
   CONSTRAINTS: 'classroom_seating_constraints',
+  FIXED_PLACEMENTS: 'classroom_seating_fixed_placements', 
 } as const;
 
-const STORAGE_VERSION = '2.1'; // 좌석 사용 제외 기능 추가로 버전 업
+const STORAGE_VERSION = '2.2'; // 고정 배치 기능 추가로 버전 업
 const STORAGE_EXPIRY_DAYS = 90; // 3개월
 
 // 만료된 데이터인지 확인하는 함수
@@ -56,6 +57,14 @@ export const saveToStorage = (state: Partial<AppState>) => {
       };
       localStorage.setItem(STORAGE_KEYS.CONSTRAINTS, JSON.stringify(dataWithTimestamp));
     }
+    if (state.fixedPlacements) { // 새로 추가
+      const dataWithTimestamp = {
+        data: state.fixedPlacements,
+        timestamp,
+        version: STORAGE_VERSION
+      };
+      localStorage.setItem(STORAGE_KEYS.FIXED_PLACEMENTS, JSON.stringify(dataWithTimestamp));
+    }
     
     // 마지막 저장 시간 기록
     localStorage.setItem('classroom_seating_last_save', timestamp);
@@ -63,6 +72,7 @@ export const saveToStorage = (state: Partial<AppState>) => {
     console.error('Failed to save to localStorage:', error);
   }
 };
+
 
 /**
  * 이전 버전 데이터를 현재 버전으로 마이그레이션
@@ -157,77 +167,60 @@ const migrateSeatingData = (seating: any, classroom: ClassroomConfig): SeatingAr
 
 export const loadFromStorage = (): Partial<AppState> | null => {
   try {
-    const loadDataWithExpiry = (key: string) => {
-      const item = localStorage.getItem(key);
-      if (!item) return null;
-      
-      try {
-        const parsed = JSON.parse(item);
-        
-        // 기존 형식 호환성 확인
-        if (parsed.timestamp) {
-          if (isDataExpired(parsed.timestamp)) {
-            localStorage.removeItem(key);
-            return null;
-          }
-          return parsed.data;
-        } else {
-          // 기존 형식 데이터는 그대로 반환하되 다음 저장 시 새 형식으로 변환
-          return parsed;
-        }
-      } catch {
-        localStorage.removeItem(key);
-        return null;
-      }
-    };
+    const loadedData: Partial<AppState> = {};
 
-    const studentsData = loadDataWithExpiry(STORAGE_KEYS.STUDENTS);
-    const classroomData = loadDataWithExpiry(STORAGE_KEYS.CLASSROOM);
-    const seatingData = loadDataWithExpiry(STORAGE_KEYS.SEATING);
-    const constraintsData = loadDataWithExpiry(STORAGE_KEYS.CONSTRAINTS);
-
-    // 데이터가 없으면 null 반환
-    if (!studentsData && !classroomData && !seatingData && !constraintsData) {
-      return null;
-    }
-
-    // 각 데이터 마이그레이션 및 처리
-    let students: Student[] = [];
+    // 학생 데이터 로드
+    const studentsData = localStorage.getItem(STORAGE_KEYS.STUDENTS);
     if (studentsData) {
-      students = migrateStudentData(studentsData);
-    }
-
-    let classroom: ClassroomConfig | undefined;
-    if (classroomData) {
-      classroom = migrateClassroomData(classroomData);
-    }
-
-    let currentSeating: SeatingArrangement = {};
-    if (seatingData && classroom) {
-      currentSeating = migrateSeatingData(seatingData, classroom);
-    }
-
-    let constraints: Constraints | undefined;
-    if (constraintsData) {
-      try {
-        constraints = migrateConstraintsData(constraintsData);
-      } catch (e) {
-        console.warn('Failed to parse constraints data:', e);
-        constraints = {
-          pairRequired: [],
-          pairProhibited: [],
-          distanceRules: [],
-          rowExclusions: [],
-        };
+      const parsed = JSON.parse(studentsData);
+      if (!isDataExpired(parsed.timestamp)) {
+        loadedData.students = parsed.data.map((student: any) => ({
+          ...student,
+          createdAt: new Date(student.createdAt)
+        }));
       }
     }
 
-    return {
-      students,
-      classroom,
-      currentSeating,
-      constraints,
-    };
+    // 교실 데이터 로드
+    const classroomData = localStorage.getItem(STORAGE_KEYS.CLASSROOM);
+    if (classroomData) {
+      const parsed = JSON.parse(classroomData);
+      if (!isDataExpired(parsed.timestamp)) {
+        loadedData.classroom = migrateClassroomData(parsed.data);
+      }
+    }
+
+    // 현재 배치 로드
+    const seatingData = localStorage.getItem(STORAGE_KEYS.SEATING);
+    if (seatingData) {
+      const parsed = JSON.parse(seatingData);
+      if (!isDataExpired(parsed.timestamp)) {
+        loadedData.currentSeating = parsed.data;
+      }
+    }
+
+    // 제약조건 로드
+    const constraintsData = localStorage.getItem(STORAGE_KEYS.CONSTRAINTS);
+    if (constraintsData) {
+      const parsed = JSON.parse(constraintsData);
+      if (!isDataExpired(parsed.timestamp)) {
+        loadedData.constraints = migrateConstraintsData(parsed.data);
+      }
+    }
+
+    // 고정 배치 로드 (새로 추가)
+    const fixedPlacementsData = localStorage.getItem(STORAGE_KEYS.FIXED_PLACEMENTS);
+    if (fixedPlacementsData) {
+      const parsed = JSON.parse(fixedPlacementsData);
+      if (!isDataExpired(parsed.timestamp)) {
+        loadedData.fixedPlacements = parsed.data.map((fp: any) => ({
+          ...fp,
+          fixedAt: new Date(fp.fixedAt)
+        }));
+      }
+    }
+
+    return Object.keys(loadedData).length > 0 ? loadedData : null;
   } catch (error) {
     console.error('Failed to load from localStorage:', error);
     return null;
@@ -305,11 +298,18 @@ const migrateConstraintsData = (constraints: any): Constraints => {
 };
 
 export const clearStorage = () => {
-  Object.values(STORAGE_KEYS).forEach(key => {
-    localStorage.removeItem(key);
-  });
+  try {
+    Object.values(STORAGE_KEYS).forEach(key => {
+      localStorage.removeItem(key);
+    });
+    // 추가로 관련 키들도 정리
+    localStorage.removeItem('classroom_seating_last_save');
+    console.log('✅ 모든 데이터가 삭제되었습니다.');
+  } catch (error) {
+    console.error('Failed to clear localStorage:', error);
+    throw error;
+  }
 };
-
 /**
  * 전체 데이터 완전 초기화 (LocalStorage 포함)
  */
@@ -398,6 +398,7 @@ export const exportData = (state: AppState) => {
     classroom: state.classroom,
     constraints: state.constraints,
     currentSeating: state.currentSeating,
+    fixedPlacements: state.fixedPlacements, // 새로 추가
     exportedAt: new Date().toISOString(),
     metadata: {
       totalStudents: state.students.length,
@@ -405,6 +406,7 @@ export const exportData = (state: AppState) => {
       disabledSeats: state.classroom.seatUsageConstraints?.filter(c => c.isDisabled).length || 0,
       genderConstraints: state.classroom.seatGenderConstraints?.length || 0,
       placedStudents: Object.keys(state.currentSeating).length,
+      fixedStudents: state.fixedPlacements.length, // 새로 추가
     }
   };
 
@@ -471,6 +473,21 @@ export const validateImportData = (data: any): { isValid: boolean; errors: strin
     
     if (invalidSeats.length > 0) {
       errors.push(`${invalidSeats.length}개의 좌석 배치가 유효하지 않습니다.`);
+    }
+  }
+
+  // 고정 배치 데이터 검증 (새로 추가)
+  if (data.fixedPlacements) {
+    if (!Array.isArray(data.fixedPlacements)) {
+      errors.push('고정 배치 데이터가 올바르지 않습니다.');
+    } else {
+      const invalidFixedPlacements = data.fixedPlacements.filter((fp: any) => 
+        !fp || typeof fp.id !== 'string' || typeof fp.studentId !== 'string' ||
+        !fp.position || typeof fp.position.row !== 'number' || typeof fp.position.col !== 'number'
+      );
+      if (invalidFixedPlacements.length > 0) {
+        errors.push(`유효하지 않은 고정 배치 데이터: ${invalidFixedPlacements.length}개`);
+      }
     }
   }
 

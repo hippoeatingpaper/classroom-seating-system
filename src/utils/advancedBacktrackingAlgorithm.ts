@@ -1,12 +1,26 @@
 //src/utils/advancedBacktrackingAlgorithm.ts
-import { Student, ClassroomConfig, Constraints, SeatingArrangement, Position, PlacementResult, ConstraintViolation } from '@/types';
+import { 
+  Student, 
+  ClassroomConfig, 
+  Constraints, 
+  SeatingArrangement, 
+  Position, 
+  PlacementResult, 
+  ConstraintViolation,
+  FixedStudentPlacement 
+} from '@/types';
 import { 
   isPairPosition, 
   calculateDistance, 
   validateAllConstraints,
   findStudentPosition,
 } from './constraintValidator';
-import { getAvailableSeats, isValidStudentPlacement } from './seatingAlgorithm';
+import { 
+  getAvailableSeats, 
+  isValidStudentPlacement, 
+  createSeatingFromFixed, 
+  getAvailableSeatsExcludingFixed 
+} from './seatingAlgorithm';
 
 interface HeuristicWeights {
   mrv: number;
@@ -58,17 +72,19 @@ export class AdvancedHeuristicEngine {
   private classroom: ClassroomConfig;
   private constraints: Constraints;
   private availableSeats: Position[];
-  private constraintGraph: Map<string, string[]>; // 학생 간 제약조건 그래프
+  private constraintGraph: Map<string, string[]>;
   private maxDepth: number;
   private timeLimit: number;
   private startTime: number = 0;
+  private fixedPlacements: FixedStudentPlacement[]; // 새로 추가
+  private fixedSeating: SeatingArrangement; // 새로 추가
   
-  // 휴리스틱 가중치 - 명시적 타입 정의
+  // 휴리스틱 가중치
   private weights: HeuristicWeights = {
-    mrv: 0.4,              // Most Remaining Values
-    degree: 0.3,           // Degree Heuristic
-    criticality: 0.2,      // 임계성
-    flexibility: 0.1       // 유연성
+    mrv: 0.4,
+    degree: 0.3,
+    criticality: 0.2,
+    flexibility: 0.1
   };
 
   constructor(
@@ -77,12 +93,15 @@ export class AdvancedHeuristicEngine {
     options: {
       maxDepth?: number;
       timeLimit?: number;
-      weights?: Partial<HeuristicWeights>; // 별도 정의한 타입 사용
+      weights?: Partial<HeuristicWeights>;
+      fixedPlacements?: FixedStudentPlacement[]; // 새로 추가
     } = {}
   ) {
     this.classroom = classroom;
     this.constraints = constraints;
-    this.availableSeats = getAvailableSeats(classroom);
+    this.fixedPlacements = options.fixedPlacements || []; // 새로 추가
+    this.fixedSeating = createSeatingFromFixed(this.fixedPlacements); // 새로 추가
+    this.availableSeats = getAvailableSeatsExcludingFixed(classroom, this.fixedPlacements); // 수정
     this.maxDepth = options.maxDepth || 1000;
     this.timeLimit = options.timeLimit || 30000;
     this.constraintGraph = this.buildConstraintGraph();
@@ -127,29 +146,34 @@ export class AdvancedHeuristicEngine {
     console.log('🚀 고급 휴리스틱 백트래킹 시작:', {
       students: students.length,
       constraints: this.constraints.pairRequired.length + this.constraints.pairProhibited.length + this.constraints.distanceRules.length,
-      availableSeats: this.availableSeats.length
+      availableSeats: this.availableSeats.length,
+      fixedStudents: this.fixedPlacements.length // 새로 추가
     });
 
-    // 1단계: 초기 도메인 계산 (각 학생이 앉을 수 있는 좌석들)
-    const initialDomains = this.calculateInitialDomains(students);
+    // 고정된 학생들 제외하고 배치할 학생들만 필터링
+    const fixedStudentIds = new Set(this.fixedPlacements.map(fp => fp.studentId));
+    const studentsToPlace = students.filter(s => !fixedStudentIds.has(s.id));
+
+    // 1단계: 초기 도메인 계산 (배치할 학생들만 대상)
+    const initialDomains = this.calculateInitialDomains(studentsToPlace);
     
     // 2단계: 제약조건 전파로 도메인 축소
-    const propagationResult = this.propagateConstraints(students, initialDomains);
+    const propagationResult = this.propagateConstraints(studentsToPlace, initialDomains);
     
     if (!propagationResult.isValid) {
       return {
         success: false,
-        seating: {},
+        seating: { ...this.fixedSeating }, // 고정 배치 포함
         message: `제약조건 전파 실패: ${propagationResult.conflicts.join(', ')}`,
-        stats: this.createStats({}, students)
+        stats: this.createStats({ ...this.fixedSeating }, students)
       };
     }
 
-    // 3단계: 초기 상태 생성
+    // 3단계: 초기 상태 생성 (고정 배치 포함)
     const initialState: PlacementState = {
-      seating: {},
-      placedStudents: new Set(),
-      unplacedStudents: [...students],
+      seating: { ...this.fixedSeating }, // 고정된 학생들을 초기 배치에 포함
+      placedStudents: new Set(fixedStudentIds), // 고정된 학생들을 배치됨으로 설정
+      unplacedStudents: [...studentsToPlace], // 배치할 학생들만
       studentDomains: propagationResult.reducedDomains,
       depth: 0,
       violations: [],
@@ -165,7 +189,8 @@ export class AdvancedHeuristicEngine {
       duration: `${duration}ms`,
       placed: result.stats.placedStudents,
       unplaced: result.stats.unplacedStudents,
-      violations: result.stats.constraintViolations
+      violations: result.stats.constraintViolations,
+      fixed: this.fixedPlacements.length
     });
 
     return result;
@@ -816,23 +841,23 @@ export class AdvancedHeuristicEngine {
    * 최종 결과 생성
    */
   private createResult(state: PlacementState, message: string): PlacementResult {
-    // 현재 상태의 모든 학생들을 찾아서 검증
-    // const allStudentIds = new Set([
-    //   ...state.placedStudents,
-    //   ...state.unplacedStudents.map(s => s.id)
-    // ]);
-    
+    // 전체 학생 목록 재구성 (고정된 학생 + 배치할 학생)
     const allStudents = [...state.unplacedStudents];
-    // 배치된 학생들의 정보도 복원 (실제로는 전체 학생 목록을 참조해야 함)
+    
+    // 배치된 학생들의 정보도 복원
     for (const studentId of state.placedStudents) {
       if (!allStudents.some(s => s.id === studentId)) {
-        // 간단한 더미 학생 객체 (실제로는 원본 학생 정보 필요)
-        allStudents.push({
-          id: studentId,
-          name: `Student_${studentId.slice(-4)}`,
-          gender: 'male' as const,
-          createdAt: new Date()
-        });
+        // 고정된 학생 정보 찾기
+        const fixedStudent = this.fixedPlacements.find(fp => fp.studentId === studentId);
+        if (fixedStudent) {
+          // 실제로는 전체 학생 목록에서 찾아야 하지만, 여기서는 더미 생성
+          allStudents.push({
+            id: studentId,
+            name: `Student_${studentId.slice(-4)}`,
+            gender: 'male' as const,
+            createdAt: new Date()
+          });
+        }
       }
     }
 
@@ -847,10 +872,12 @@ export class AdvancedHeuristicEngine {
     const placementRate = allStudents.length > 0 ? 
       (stats.placedStudents / allStudents.length * 100).toFixed(1) : '0';
 
+    const fixedText = this.fixedPlacements.length > 0 ? ` (고정 ${this.fixedPlacements.length}명 포함)` : '';
+
     return {
       success: state.unplacedStudents.length === 0,
       seating: state.seating,
-      message: `고급 휴리스틱 배치: ${message} (${stats.placedStudents}/${allStudents.length}명, ${placementRate}%)`,
+      message: `고급 휴리스틱 배치: ${message} (${stats.placedStudents}/${allStudents.length}명, ${placementRate}%)${fixedText}`,
       violations: validation.violations,
       stats
     };
@@ -880,19 +907,20 @@ export class AdvancedHeuristicEngine {
 export const generateAdvancedHeuristicPlacement = async (
   students: Student[], 
   classroom: ClassroomConfig,
-  constraints: Constraints = { pairRequired: [], pairProhibited: [], distanceRules: [], rowExclusions: [] }
+  constraints: Constraints = { pairRequired: [], pairProhibited: [], distanceRules: [], rowExclusions: [] },
+  fixedPlacements: FixedStudentPlacement[] = [] // 새로 추가
 ): Promise<PlacementResult> => {
   
   if (students.length === 0) {
     return {
       success: false,
-      seating: {},
+      seating: createSeatingFromFixed(fixedPlacements), // 고정 배치만 반환
       message: '배치할 학생이 없습니다.',
       stats: {
         totalSeats: classroom.rows * classroom.cols,
         availableSeats: getAvailableSeats(classroom).length,
         disabledSeats: 0,
-        placedStudents: 0,
+        placedStudents: fixedPlacements.length,
         unplacedStudents: 0,
         constraintViolations: 0
       }
@@ -923,17 +951,19 @@ export const generateAdvancedHeuristicPlacement = async (
     constraints: totalConstraints,
     complexity,
     timeLimit: `${timeLimit/1000}s`,
-    maxDepth
+    maxDepth,
+    fixedStudents: fixedPlacements.length
   });
 
   const engine = new AdvancedHeuristicEngine(classroom, constraints, {
     maxDepth,
     timeLimit,
+    fixedPlacements, // 고정 배치 전달
     weights: {
-      mrv: 0.35,        // MRV 가중치 약간 감소
-      degree: 0.35,     // Degree 가중치 증가
-      criticality: 0.2, // 임계성 유지
-      flexibility: 0.1  // 유연성 유지
+      mrv: 0.35,
+      degree: 0.35,
+      criticality: 0.2,
+      flexibility: 0.1
     }
   });
 
@@ -946,15 +976,17 @@ export const generateAdvancedHeuristicPlacement = async (
 export const generateLightweightHeuristicPlacement = async (
   students: Student[], 
   classroom: ClassroomConfig,
-  constraints: Constraints = { pairRequired: [], pairProhibited: [], distanceRules: [], rowExclusions: [] }
+  constraints: Constraints = { pairRequired: [], pairProhibited: [], distanceRules: [], rowExclusions: [] },
+  fixedPlacements: FixedStudentPlacement[] = []
 ): Promise<PlacementResult> => {
   
   const engine = new AdvancedHeuristicEngine(classroom, constraints, {
-    maxDepth: students.length * 2, // 깊이 제한
-    timeLimit: 10000,              // 10초 제한
+    maxDepth: students.length * 2,
+    timeLimit: 10000,
+    fixedPlacements, // 고정 배치 전달
     weights: {
-      mrv: 0.5,      // MRV에 더 집중
-      degree: 0.3,   // Degree 적당히
+      mrv: 0.5,
+      degree: 0.3,
       criticality: 0.15,
       flexibility: 0.05
     }
@@ -969,17 +1001,19 @@ export const generateLightweightHeuristicPlacement = async (
 export const generateConstraintFocusedHeuristicPlacement = async (
   students: Student[], 
   classroom: ClassroomConfig,
-  constraints: Constraints = { pairRequired: [], pairProhibited: [], distanceRules: [], rowExclusions: [] }
+  constraints: Constraints = { pairRequired: [], pairProhibited: [], distanceRules: [], rowExclusions: [] },
+  fixedPlacements: FixedStudentPlacement[] = []
 ): Promise<PlacementResult> => {
   
   const engine = new AdvancedHeuristicEngine(classroom, constraints, {
-    maxDepth: students.length * 8, // 더 깊은 탐색
-    timeLimit: 60000,              // 60초 제한
+    maxDepth: students.length * 8,
+    timeLimit: 60000,
+    fixedPlacements, // 고정 배치 전달
     weights: {
-      mrv: 0.25,        // MRV 감소
-      degree: 0.45,     // Degree 크게 증가
-      criticality: 0.25, // 임계성 증가
-      flexibility: 0.05  // 유연성 최소화
+      mrv: 0.25,
+      degree: 0.45,
+      criticality: 0.25,
+      flexibility: 0.05
     }
   });
 

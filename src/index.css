@@ -80,3 +80,131 @@
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
+
+/* 고정된 학생 좌석 스타일 */
+.seat-fixed {
+  position: relative;
+  box-shadow: 0 0 0 3px rgba(251, 146, 60, 0.5); /* orange-400 with opacity */
+  animation: fixed-pulse 2s ease-in-out infinite;
+}
+
+/* 고정 학생 펄스 애니메이션 */
+@keyframes fixed-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 3px rgba(251, 146, 60, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(251, 146, 60, 0.3);
+  }
+}
+
+/* 고정 아이콘 스타일 */
+.fixed-pin-icon {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: linear-gradient(135deg, #f97316, #ea580c);
+  color: white;
+  border-radius: 50%;
+  padding: 2px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  z-index: 10;
+}
+
+/* 고정 학생 컨텍스트 메뉴 스타일 */
+.fixed-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  transition: all 0.2s ease;
+  border-left: 3px solid transparent;
+}
+
+.fixed-menu-item:hover {
+  background-color: #fef3c7; /* amber-100 */
+  border-left-color: #f59e0b; /* amber-500 */
+}
+
+.fixed-menu-item.active {
+  background-color: #fef3c7;
+  border-left-color: #f59e0b;
+  color: #92400e; /* amber-800 */
+}
+
+/* 고정 학생 목록 스타일 */
+.fixed-student-list {
+  max-height: 200px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db #f3f4f6;
+}
+
+.fixed-student-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.fixed-student-list::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 3px;
+}
+
+.fixed-student-list::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+.fixed-student-list::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* 고정 학생 카드 스타일 */
+.fixed-student-card {
+  background: linear-gradient(135deg, #fff7ed, #fed7aa);
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  padding: 12px;
+  transition: all 0.2s ease;
+}
+
+.fixed-student-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(251, 146, 60, 0.15);
+}
+
+/* 고정 해제 버튼 스타일 */
+.unfix-button {
+  opacity: 0.7;
+  transition: all 0.2s ease;
+}
+
+.unfix-button:hover {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+/* 고정 상태 배지 */
+.fixed-badge {
+  background: linear-gradient(135deg, #f97316, #ea580c);
+  color: white;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 고정 학생 알림 스타일 */
+.fixed-notification {
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  border: 1px solid #93c5fd;
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 12px;
+}
+
+.fixed-notification .icon {
+  color: #3b82f6;
+}

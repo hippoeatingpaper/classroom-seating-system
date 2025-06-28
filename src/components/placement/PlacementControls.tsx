@@ -3,15 +3,18 @@ import React, { useState } from 'react';
 import { 
   Shuffle, RotateCcw, Users, UserCheck, AlertTriangle, CheckCircle, 
   Target, Brain, Settings2,
-  Clock, TrendingUp, Activity, Sparkles, Rows
+  Clock, TrendingUp, Activity, Sparkles, Rows,
+  Pin, PinOff
 } from 'lucide-react';
 import { Button } from '@/components/common/Button';
 import { useAppContext } from '@/context/AppContext';
 import { 
   getAvailableSeats,
-  validateSeatingArrangement
+  validateSeatingArrangement,
+  getAvailableSeatsExcludingFixed
 } from '@/utils/seatingAlgorithm';
 import { validateConstraintCompatibility } from '@/utils/constraintValidator';
+import { FixedStudentPlacement, Student } from '@/types';
 
 type AlgorithmType = 
   | 'gender'
@@ -48,6 +51,11 @@ interface QualityMetrics {
   executionTime: number;      // 실행 시간
   qualityScore: number;       // 종합 품질 점수
   efficiency: 'excellent' | 'good' | 'fair' | 'poor';
+}
+
+interface FixedStudentItem extends FixedStudentPlacement {
+  student: Student;
+  positionText: string;
 }
 
 const categorizeViolations = (violations: any[]) => {
@@ -178,8 +186,16 @@ export const PlacementControls: React.FC = () => {
   const totalSeats = state.classroom.rows * state.classroom.cols;
   const disabledSeats = totalSeats - availableSeats.length;
   const placedStudents = Object.keys(state.currentSeating).length;
-  const canPlaceAll = state.students.length <= availableSeats.length;
-
+  
+  // 고정 학생 관련 계산 수정
+  const fixedStudentCount = state.fixedPlacements.length;
+  const availableStudentsForPlacement = state.students.length - fixedStudentCount;
+  
+  // 고정된 학생들이 차지하는 좌석을 제외한 실제 사용 가능한 좌석 수
+  const availableSeatsForPlacement = getAvailableSeatsExcludingFixed(state.classroom, state.fixedPlacements).length;
+  
+  // 전체 배치 가능 여부 (고정 학생 고려)
+  const canPlaceAll = availableStudentsForPlacement <= availableSeatsForPlacement;
   // 제약조건 통계
   const showAdvanced = localStorage.getItem('constraints_show_advanced') === 'true';
   const totalConstraints = state.constraints.pairRequired.length + 
@@ -210,25 +226,26 @@ export const PlacementControls: React.FC = () => {
     available: boolean;
     reason?: string;
   } => {
-    // 고급 휴리스틱의 minConstraints 조건 제거됨
-    // 백트래킹의 maxStudents 조건 제거됨
+    // 고정되지 않은 학생 수 계산
+    const fixedStudentIds = new Set(state.fixedPlacements.map(fp => fp.studentId));
+    const studentsToPlace = state.students.filter(s => !fixedStudentIds.has(s.id));
     
-    if (algorithm.maxStudents && state.students.length > algorithm.maxStudents) {
+    if (algorithm.maxStudents && studentsToPlace.length > algorithm.maxStudents) {
       return {
         available: false,
-        reason: `${algorithm.maxStudents}명 이하에서 권장`
+        reason: `배치할 학생 ${studentsToPlace.length}명이 권장 최대값 ${algorithm.maxStudents}명을 초과`
       };
     }
     
-    // 남녀 구분 알고리즘 특별 조건 추가
+    // 남녀 구분 알고리즘 특별 조건 (고정되지 않은 학생만 고려)
     if (algorithm.id === 'gender') {
-      const maleCount = state.students.filter(s => s.gender === 'male').length;
-      const femaleCount = state.students.filter(s => s.gender === 'female').length;
+      const maleCount = studentsToPlace.filter(s => s.gender === 'male').length;
+      const femaleCount = studentsToPlace.filter(s => s.gender === 'female').length;
       
       if (maleCount === 0 || femaleCount === 0) {
         return {
           available: false,
-          reason: '남학생과 여학생이 모두 필요합니다'
+          reason: '배치할 남학생과 여학생이 모두 필요합니다'
         };
       }
     }
@@ -239,6 +256,15 @@ export const PlacementControls: React.FC = () => {
   const handleGeneratePlacement = async () => {
     if (state.students.length === 0) {
       alert('배치할 학생이 없습니다.');
+      return;
+    }
+
+    // 고정되지 않은 학생 수 확인 추가
+    const fixedStudentIds = new Set(state.fixedPlacements.map(fp => fp.studentId));
+    const studentsToPlace = state.students.filter(s => !fixedStudentIds.has(s.id));
+    
+    if (studentsToPlace.length === 0) {
+      alert('모든 학생이 이미 고정되어 있습니다. 배치할 학생이 없습니다.');
       return;
     }
 
@@ -263,6 +289,8 @@ export const PlacementControls: React.FC = () => {
       await new Promise(resolve => setTimeout(resolve, 300));
 
       console.log(`🎯 선택된 알고리즘: ${selectedAlgorithm}`);
+      console.log(`📌 고정된 학생 수: ${state.fixedPlacements.length}`);
+      console.log(`🎒 배치할 학생 수: ${studentsToPlace.length}`);
       
       const startTime = Date.now();
       
@@ -283,7 +311,8 @@ export const PlacementControls: React.FC = () => {
           algorithmOptions: {
             pairCount,
             ...adaptiveRandomOptions
-          }
+          },
+          fixedPlacements: state.fixedPlacements // 🔥 여기가 핵심 수정사항!
         }
       );
 
@@ -316,6 +345,11 @@ export const PlacementControls: React.FC = () => {
         
         // 알림 메시지 생성
         let message = `배치 완료! ${result.stats.placedStudents}/${state.students.length}명 배치됨`;
+        
+        // 고정 학생 정보 추가
+        if (fixedStudentCount > 0) {
+          message += ` (고정 ${fixedStudentCount}명 포함)`;
+        }
         
         // 재시도 정보 추가
         if (enableRetry && retryProgress && retryProgress.attempt > 1) {
@@ -453,14 +487,132 @@ export const PlacementControls: React.FC = () => {
     };
     return labels[efficiency];
   };
+  
+  // 모든 고정 해제 핸들러
+  const handleClearAllFixed = () => {
+    if (fixedStudentCount === 0) return;
+    
+    const confirmed = confirm(
+      `고정된 모든 학생(${fixedStudentCount}명)의 고정을 해제하시겠습니까?\n\n` +
+      `해제 후에는 다음 배치 실행 시 이동할 수 있습니다.`
+    );
+    
+    if (confirmed) {
+      dispatch({ type: 'CLEAR_ALL_FIXED_PLACEMENTS' });
+    }
+  };
+  
+  // 고정 학생 목록 표시
+  const getFixedStudentsList = (): FixedStudentItem[] => {
+    return state.fixedPlacements
+      .map(fp => {
+        const student = state.students.find(s => s.id === fp.studentId);
+        if (!student) return null;
+        
+        return {
+          ...fp,
+          student,
+          positionText: `${fp.position.row + 1}-${fp.position.col + 1}`
+        };
+      })
+      .filter((item): item is FixedStudentItem => item !== null); // 타입 가드 사용
+  };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-900">배치 실행</h3>
-        <div className="text-sm text-gray-500">
-          {placedStudents}/{state.students.length}명 배치됨
+    <div className="space-y-4">
+      {/* 기존 배치 정보 카드 수정 */}
+      <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <h3 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+          <Users className="w-5 h-5 text-blue-500" />
+          배치 현황
+        </h3>
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="flex justify-between">
+            <span className="text-blue-700">전체 학생:</span>
+            <span className="font-medium">{state.students.length}명</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-green-700">배치됨:</span>
+            <span className="font-medium">{placedStudents}명</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-purple-700">고정됨:</span>
+            <span className="font-medium">{fixedStudentCount}명</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-orange-700">배치 대상:</span>
+            <span className="font-medium">{availableStudentsForPlacement}명</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-700">사용 가능한 좌석:</span>
+            <span className="font-medium">{availableSeatsForPlacement}개</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-700">비활성화된 좌석:</span>
+            <span className="font-medium">{disabledSeats}개</span>
+          </div>
         </div>
+        {fixedStudentCount > 0 && (
+          <div className="mt-3 text-xs text-purple-700 bg-purple-100 rounded px-2 py-1">
+            💡 {fixedStudentCount}명의 학생이 고정되어 있어 배치 시 이동하지 않습니다
+          </div>
+        )}
+
+        {!canPlaceAll && availableStudentsForPlacement > 0 && (
+          <div className="mt-2 text-xs text-orange-700 bg-orange-100 rounded px-2 py-1">
+            ⚠️ 배치할 학생({availableStudentsForPlacement}명)이 사용 가능한 좌석({availableSeatsForPlacement}개)보다 많습니다
+          </div>
+        )}
+
+      {/* 고정 학생 관리 섹션 */}
+        {fixedStudentCount > 0 && (
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-medium text-gray-800 flex items-center gap-2">
+                <Pin className="w-4 h-4 text-orange-500" />
+                고정된 학생 ({fixedStudentCount}명)
+              </h4>
+              <button
+                onClick={handleClearAllFixed}
+                className="text-sm text-red-600 hover:text-red-700 flex items-center gap-1 hover:bg-red-50 px-2 py-1 rounded transition-colors"
+              >
+                <PinOff className="w-4 h-4" />
+                전체 해제
+              </button>
+            </div>
+            
+            <div className="space-y-2 max-h-32 overflow-y-auto">
+              {getFixedStudentsList().map((item: FixedStudentItem) => (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between bg-orange-50 rounded px-3 py-2 text-sm"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{item.student.name}</span>
+                    <span className="text-gray-500">({item.positionText})</span>
+                    <span className="text-xs bg-orange-200 text-orange-800 px-2 py-0.5 rounded">
+                      {item.student.gender === 'male' ? '남' : '여'}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => dispatch({
+                      type: 'REMOVE_FIXED_PLACEMENT',
+                      payload: { row: item.position.row, col: item.position.col }
+                    })}
+                    className="text-red-500 hover:text-red-700 hover:bg-red-100 p-1 rounded transition-colors"
+                    title="고정 해제"
+                  >
+                    <PinOff className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            
+            <div className="mt-3 text-xs text-gray-600 bg-blue-50 rounded px-3 py-2">
+              💡 고정된 학생들은 배치 실행 시 현재 위치에서 이동하지 않습니다.
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 진행률 표시 */}
@@ -1073,6 +1225,14 @@ export const PlacementControls: React.FC = () => {
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
         <h4 className="font-medium text-blue-900 mb-2">🧭 알고리즘 선택 가이드</h4>
         <div className="text-sm text-blue-800 space-y-1">
+          {fixedStudentCount > 0 && (
+            <div className="font-medium text-orange-700 mb-2">
+              📌 {fixedStudentCount}명이 고정됨 → {availableStudentsForPlacement}명 대상 배치
+            </div>
+          )}
+          {totalConstraints === 0 && (
+            <div className="font-medium text-green-700">💡 제약조건이 없습니다 → 성별 구분 또는 적응형 랜덤 추천</div>
+          )}
           {totalConstraints === 0 && (
             <div className="font-medium text-green-700">💡 제약조건이 없습니다 → 성별 구분 또는 적응형 랜덤 추천</div>
           )}

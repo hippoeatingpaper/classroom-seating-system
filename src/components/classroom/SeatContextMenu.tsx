@@ -1,6 +1,6 @@
 //src/components/classroom/SeatContextMenu.tsx
 import React, { useEffect, useRef, useState } from 'react';
-import { User, UserX, Ban, RotateCw, AlertCircle, X } from 'lucide-react';
+import { User, UserX, Ban, RotateCw, AlertCircle, X, Pin, PinOff } from 'lucide-react';
 import { SeatGenderConstraint, SeatUsageConstraint } from '@/types';
 import { useAppContext } from '@/context/AppContext';
 import { Button } from '@/components/common/Button';
@@ -23,6 +23,43 @@ export const SeatContextMenu: React.FC<SeatContextMenuProps> = ({
   const menuRef = useRef<HTMLDivElement>(null);
   const [showReasonModal, setShowReasonModal] = useState(false);
   const [disableReason, setDisableReason] = useState('');
+
+  // 현재 좌석의 학생 정보 가져오기
+  const currentStudentId = seatPosition ? state.currentSeating[`${seatPosition.row}-${seatPosition.col}`] : null;
+  const currentStudent = currentStudentId ? state.students.find(s => s.id === currentStudentId) : null;
+  
+  // 현재 좌석이 고정되어 있는지 확인
+  const isFixed = seatPosition ? state.fixedPlacements.some(
+    fp => fp.position.row === seatPosition.row && fp.position.col === seatPosition.col
+  ) : false;
+
+  // 고정/해제 핸들러
+  const handleToggleFixed = () => {
+    if (!seatPosition || !currentStudentId) {
+      onClose();
+      return;
+    }
+
+    if (isFixed) {
+      // 고정 해제
+      dispatch({
+        type: 'REMOVE_FIXED_PLACEMENT',
+        payload: { row: seatPosition.row, col: seatPosition.col }
+      });
+    } else {
+      // 고정 설정
+      dispatch({
+        type: 'ADD_FIXED_PLACEMENT',
+        payload: {
+          studentId: currentStudentId,
+          position: seatPosition,
+          reason: '수동 고정'
+        }
+      });
+    }
+    
+    onClose();
+  };
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -129,7 +166,49 @@ export const SeatContextMenu: React.FC<SeatContextMenuProps> = ({
       >
         <div className="px-3 py-2 text-sm font-medium text-gray-700 border-b border-gray-100">
           좌석 설정 ({seatPosition.row + 1}-{seatPosition.col + 1})
+          {currentStudent && (
+            <div className="text-xs text-gray-500 mt-1">
+              {currentStudent.name} ({currentStudent.gender === 'male' ? '남' : '여'})
+              {isFixed && <span className="ml-2 text-orange-600 font-medium">📌 고정됨</span>}
+            </div>
+          )}
         </div>
+
+        {/* 학생 고정 섹션 - 학생이 있을 때만 표시 */}
+        {currentStudent && (
+          <div className="py-1">
+            <div className="px-3 py-1 text-xs font-medium text-gray-500 uppercase">
+              학생 고정
+            </div>
+            
+            <button
+              onClick={handleToggleFixed}
+              className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-50 transition-colors flex items-center gap-2 ${
+                isFixed ? 'text-orange-600' : 'text-blue-600'
+              }`}
+            >
+              {isFixed ? (
+                <>
+                  <PinOff className="w-4 h-4" />
+                  고정 해제
+                </>
+              ) : (
+                <>
+                  <Pin className="w-4 h-4" />
+                  이 자리에 고정
+                </>
+              )}
+            </button>
+            
+            {isFixed && (
+              <div className="px-3 py-1">
+                <div className="text-xs text-gray-500 bg-orange-50 rounded px-2 py-1">
+                  💡 고정된 학생은 배치 실행 시 이동하지 않습니다
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         
         {/* 좌석 사용 섹션 */}
         <div className="py-1">

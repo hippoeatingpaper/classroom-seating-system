@@ -62,6 +62,12 @@ export interface Constraints {
   rowExclusions: RowExclusionConstraint[]; // 줄 제외
 }
 
+export interface FixedStudentPlacement {
+  studentId: string;
+  position: Position;
+  fixedAt: Date;
+}
+
 export interface SeatingArrangement {
   [key: string]: string; // position -> studentId
 }
@@ -71,6 +77,7 @@ export interface AppState {
   classroom: ClassroomConfig;
   constraints: Constraints;
   currentSeating: SeatingArrangement;
+  fixedPlacements: FixedStudentPlacement[]; 
   ui: {
     selectedStudents: string[];
     draggedStudent: string | null;
@@ -109,6 +116,15 @@ export interface ConstraintViolation {
   message: string;
   studentIds: string[];
   positions?: Position[];
+}
+
+// 고정 학생 배치 정보
+export interface FixedStudentPlacement {
+  id: string;
+  studentId: string;
+  position: Position;
+  fixedAt: Date;
+  reason?: string; // 고정 이유 (선택사항)
 }
 
 // 배치 결과 인터페이스
@@ -157,4 +173,10 @@ export type AppAction =
   | { type: 'RESET_ALL' }
   | { type: 'ADD_ROW_EXCLUSION_CONSTRAINT'; payload: Omit<RowExclusionConstraint, 'id' | 'createdAt'> }
   | { type: 'REMOVE_ROW_EXCLUSION_CONSTRAINT'; payload: string }
-  | { type: 'UPDATE_ROW_EXCLUSION_CONSTRAINT'; payload: { id: string; excludedRowsFromBack: number } };
+  | { type: 'UPDATE_ROW_EXCLUSION_CONSTRAINT'; payload: { id: string; excludedRowsFromBack: number } }
+  // 학생 고정 관련 액션들
+  | { type: 'ADD_FIXED_PLACEMENT'; payload: Omit<FixedStudentPlacement, 'id' | 'fixedAt'> }
+  | { type: 'REMOVE_FIXED_PLACEMENT'; payload: { row: number; col: number } }
+  | { type: 'REMOVE_FIXED_PLACEMENT_BY_STUDENT'; payload: string } // studentId
+  | { type: 'CLEAR_ALL_FIXED_PLACEMENTS' }
+  | { type: 'SET_FIXED_PLACEMENTS'; payload: FixedStudentPlacement[] }

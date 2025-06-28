@@ -111,7 +111,7 @@ export const ConstraintsPanel: React.FC = () => {
           <h3 className="text-lg font-semibold text-gray-900">제약조건</h3>
         </div>
         <div className="text-sm text-gray-500">
-          총 {getTotalConstraints()}개
+          총 {state.constraints.pairRequired.length + state.constraints.pairProhibited.length}개
         </div>
       </div>
 

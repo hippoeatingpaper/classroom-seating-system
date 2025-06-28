@@ -1,12 +1,24 @@
 //src/utils/adaptiveRandomHeuristic.ts
-import { Student, ClassroomConfig, Constraints, SeatingArrangement, Position, PlacementResult } from '@/types';
+import { 
+  Student, 
+  ClassroomConfig, 
+  Constraints, 
+  SeatingArrangement, 
+  Position, 
+  PlacementResult,
+  FixedStudentPlacement
+} from '@/types';
 import { 
   validateAllConstraints,
   isPairPosition,
   calculateDistance,
   findStudentPosition
 } from './constraintValidator';
-import { getAvailableSeats } from './seatingAlgorithm';
+import { 
+  getAvailableSeats, 
+  createSeatingFromFixed, 
+  getAvailableSeatsExcludingFixed 
+} from './seatingAlgorithm';
 
 interface RandomizationConfig {
   mode: 'conservative' | 'balanced' | 'exploratory' | 'chaos';
@@ -44,38 +56,59 @@ interface PlacementDecision {
   reasoning: string[];         // 결정 과정 설명
 }
 
+
 export class AdaptiveRandomHeuristicEngine {
   private classroom: ClassroomConfig;
   private constraints: Constraints;
   private availableSeats: Position[];
+  private constraintGraph: Map<string, string[]>;
   private randomConfig: RandomizationConfig;
   private placementHistory: PlacementDecision[] = [];
-  private diversityMap: Map<string, number> = new Map(); // 위치별 다양성 점수
-  private rng: () => number; // 시드 기반 랜덤 생성기
+  private diversityMap: Map<string, number> = new Map();
+  private rng: () => number;
+  private fixedPlacements: FixedStudentPlacement[]; 
+  private fixedSeating: SeatingArrangement; 
+  private startTime: number = 0;
+  private maxDepth: number;
+  private timeLimit: number;
 
   constructor(
     classroom: ClassroomConfig,
     constraints: Constraints,
     randomConfig?: Partial<RandomizationConfig>,
-    seed?: number
+    seed?: number,
+    fixedPlacements: FixedStudentPlacement[] = [],
+    options: { maxDepth?: number; timeLimit?: number } = {} 
   ) {
     this.classroom = classroom;
     this.constraints = constraints;
-    this.availableSeats = getAvailableSeats(classroom);
+    this.fixedPlacements = fixedPlacements; 
+    this.fixedSeating = createSeatingFromFixed(fixedPlacements); 
+    this.availableSeats = getAvailableSeatsExcludingFixed(classroom, fixedPlacements); // 수정
     this.randomConfig = this.createRandomConfig(randomConfig);
     this.rng = this.createSeededRandom(seed);
+    this.constraintGraph = this.buildConstraintGraph();
     this.initializeDiversityMap();
+    this.maxDepth = options.maxDepth || 1000;
+    this.timeLimit = options.timeLimit || 30000;
   }
 
   /**
    * 메인 배치 실행
    */
   public async generatePlacement(students: Student[]): Promise<PlacementResult> {
+    this.startTime = Date.now();
+    
     console.log(`🎲 적응형 랜덤 휴리스틱 시작 (모드: ${this.randomConfig.mode})`);
     
-    const seating: SeatingArrangement = {};
-    const placedStudents = new Set<string>();
-    let unplacedStudents = [...students];
+    // 고정된 학생들 제외하고 배치할 학생들만 필터링
+    const fixedStudentIds = new Set(this.fixedPlacements.map(fp => fp.studentId));
+    const studentsToPlace = students.filter(s => !fixedStudentIds.has(s.id));
+    
+    // 초기 배치에 고정된 학생들 포함
+    const seating: SeatingArrangement = { ...this.fixedSeating };
+    const placedStudents = new Set<string>(fixedStudentIds);
+    let unplacedStudents = [...studentsToPlace];
     
     // 다단계 배치 실행
     const phases = [
@@ -111,12 +144,12 @@ export class AdaptiveRandomHeuristicEngine {
       console.log(`✅ ${phase.name} 완료: ${phaseResult.placedStudentIds.length}명 배치`);
     }
 
-    // 최종 검증 및 결과 생성
+    // 최종 검증 및 결과 생성 (전체 학생 대상)
     const validation = validateAllConstraints(seating, students, this.classroom, this.constraints);
     const stats = this.createStats(seating, students);
     const diversityScore = this.calculateDiversityScore(seating);
 
-    const message = this.generateResultMessage(stats, diversityScore, this.randomConfig.mode);
+    const message = this.generateResultMessage(stats, diversityScore, this.randomConfig.mode, this.fixedPlacements.length);
 
     return {
       success: unplacedStudents.length === 0,
@@ -125,6 +158,43 @@ export class AdaptiveRandomHeuristicEngine {
       violations: validation.violations,
       stats
     };
+  }
+
+  /**
+   * 현재 배치에서 사용 가능한 위치들 반환 (고정된 좌석 제외)
+   */
+  private getAvailablePositions(currentSeating: SeatingArrangement): Position[] {
+    const usedPositions = new Set(Object.keys(currentSeating));
+    return this.availableSeats.filter(pos => {
+      const posKey = `${pos.row}-${pos.col}`;
+      return !usedPositions.has(posKey);
+    });
+  }
+
+  /**
+   * 제약조건 그래프 구축 (학생 간 연결 관계)
+   */
+  private buildConstraintGraph(): Map<string, string[]> {
+    const graph = new Map<string, string[]>();
+    
+    // 모든 제약조건에서 학생 쌍들을 추출하여 그래프 구성
+    const allConstraints = [
+      ...this.constraints.pairRequired,
+      ...this.constraints.pairProhibited,
+      ...this.constraints.distanceRules
+    ];
+
+    allConstraints.forEach(constraint => {
+      const [student1, student2] = constraint.students;
+      
+      if (!graph.has(student1)) graph.set(student1, []);
+      if (!graph.has(student2)) graph.set(student2, []);
+      
+      graph.get(student1)!.push(student2);
+      graph.get(student2)!.push(student1);
+    });
+
+    return graph;
   }
 
   /**
@@ -825,7 +895,7 @@ export class AdaptiveRandomHeuristicEngine {
     };
   }
 
-  private generateResultMessage(stats: any, diversityScore: number, mode: string): string {
+  private generateResultMessage(stats: any, diversityScore: number, mode: string, fixedCount: number): string {
     const placementRate = stats.placedStudents > 0 ? 
       ((stats.placedStudents / (stats.placedStudents + stats.unplacedStudents)) * 100).toFixed(1) : '0';
     
@@ -839,6 +909,11 @@ export class AdaptiveRandomHeuristicEngine {
     const modeDesc = modeDescriptions[mode as keyof typeof modeDescriptions] || mode;
     
     let message = `${modeDesc} 랜덤 휴리스틱 배치: ${stats.placedStudents}/${stats.placedStudents + stats.unplacedStudents}명 배치 (${placementRate}%)`;
+    
+    // 고정 학생 정보 추가
+    if (fixedCount > 0) {
+      message += ` (고정 ${fixedCount}명 포함)`;
+    }
     
     if (diversityScore > 0) {
       message += ` | 다양성 점수: ${diversityScore.toFixed(1)}`;
@@ -967,19 +1042,22 @@ export const generateAdaptiveRandomPlacement = async (
     customConfig?: Partial<RandomizationConfig>;
     seed?: number;
     generateMultiple?: number; // 여러 개 생성 후 최고 선택
+    fixedPlacements?: FixedStudentPlacement[]; // 새로 추가
   } = {}
 ): Promise<PlacementResult> => {
+  
+  const fixedPlacements = options.fixedPlacements || [];
   
   if (students.length === 0) {
     return {
       success: false,
-      seating: {},
+      seating: createSeatingFromFixed(fixedPlacements), // 고정 배치만 반환
       message: '배치할 학생이 없습니다.',
       stats: {
         totalSeats: classroom.rows * classroom.cols,
         availableSeats: getAvailableSeats(classroom).length,
         disabledSeats: 0,
-        placedStudents: 0,
+        placedStudents: fixedPlacements.length,
         unplacedStudents: 0,
         constraintViolations: 0
       }
@@ -1005,7 +1083,8 @@ export const generateAdaptiveRandomPlacement = async (
         classroom, 
         constraints, 
         config, 
-        options.seed ? options.seed + i : undefined
+        options.seed ? options.seed + i : undefined,
+        fixedPlacements // 고정 배치 전달
       );
       
       const result = await engine.generatePlacement(students);
@@ -1027,7 +1106,13 @@ export const generateAdaptiveRandomPlacement = async (
   }
 
   // 단일 생성
-  const engine = new AdaptiveRandomHeuristicEngine(classroom, constraints, config, options.seed);
+  const engine = new AdaptiveRandomHeuristicEngine(
+    classroom, 
+    constraints, 
+    config, 
+    options.seed,
+    fixedPlacements // 고정 배치 전달
+  );
   const result = await engine.generatePlacement(students);
   
   // 분석 정보 추가 (개발 모드에서)

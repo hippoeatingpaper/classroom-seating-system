@@ -39,6 +39,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       if (loadedState.constraints) {
         dispatch({ type: 'SET_CONSTRAINTS', payload: loadedState.constraints });
       }
+      if (loadedState.fixedPlacements) { // 새로 추가
+        dispatch({ type: 'SET_FIXED_PLACEMENTS', payload: loadedState.fixedPlacements });
+      }
     } else {
       // 저장된 데이터가 없는 경우 (첫 실행), 기본 학생들은 이미 createInitialState에서 설정됨
       console.log('🎓 기본 학생 명단 25명이 설정되었습니다.');
@@ -56,7 +59,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     state.students, 
     state.classroom, 
     state.currentSeating, 
-    state.constraints  // 제약조건 변경 감지 추가
+    state.constraints,
+    state.fixedPlacements  // 고정 배치 변경 감지 추가
   ]);
 
   return (

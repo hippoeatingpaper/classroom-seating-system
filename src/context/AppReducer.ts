@@ -1,5 +1,5 @@
 //src/context/AppReducer.tsx
-import { AppState, AppAction, Student, ClassroomConfig } from '@/types';
+import { AppState, AppAction, Student, ClassroomConfig, SeatingArrangement, FixedStudentPlacement  } from '@/types';
 import { generateId } from '@/utils/idGenerator';
 
 /**
@@ -61,6 +61,7 @@ const createInitialState = (): AppState => ({
     rowExclusions: [],
   },
   currentSeating: {},
+  fixedPlacements: [], // 새로 추가된 필드
   ui: {
     selectedStudents: [],
     draggedStudent: null,
@@ -115,6 +116,8 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
         students: state.students.filter(s => s.id !== removedStudentId),
         currentSeating: newSeating,
         constraints: newConstraints,
+        // 해당 학생의 고정 배치 제거
+        fixedPlacements: state.fixedPlacements.filter(fp => fp.studentId !== removedStudentId),
       };
     }
 
@@ -147,6 +150,127 @@ export const appReducer = (state: AppState, action: AppAction): AppState => {
             })
           : state.currentSeating,
       };
+      
+    // 고정 학생 배치 추가
+    case 'ADD_FIXED_PLACEMENT': {
+      const { studentId, position, reason } = action.payload;
+      
+      // 이미 해당 위치에 고정된 학생이 있는지 확인
+      const existingFixed = state.fixedPlacements.find(
+        fp => fp.position.row === position.row && fp.position.col === position.col
+      );
+      
+      if (existingFixed) {
+        // 기존 고정을 제거하고 새로운 고정 추가
+        return {
+          ...state,
+          fixedPlacements: [
+            ...state.fixedPlacements.filter(
+              fp => !(fp.position.row === position.row && fp.position.col === position.col)
+            ),
+            {
+              id: generateId(),
+              studentId,
+              position,
+              reason,
+              fixedAt: new Date(),
+            }
+          ]
+        };
+      }
+      
+      // 해당 학생이 다른 위치에 고정되어 있는지 확인 후 제거
+      const filteredPlacements = state.fixedPlacements.filter(
+        fp => fp.studentId !== studentId
+      );
+      
+      return {
+        ...state,
+        fixedPlacements: [
+          ...filteredPlacements,
+          {
+            id: generateId(),
+            studentId,
+            position,
+            reason,
+            fixedAt: new Date(),
+          }
+        ]
+      };
+    }
+
+    // 특정 위치의 고정 해제
+    case 'REMOVE_FIXED_PLACEMENT': {
+      const { row, col } = action.payload;
+      return {
+        ...state,
+        fixedPlacements: state.fixedPlacements.filter(
+          fp => !(fp.position.row === row && fp.position.col === col)
+        )
+      };
+    }
+
+    // 특정 학생의 고정 해제
+    case 'REMOVE_FIXED_PLACEMENT_BY_STUDENT': {
+      const studentId = action.payload;
+      return {
+        ...state,
+        fixedPlacements: state.fixedPlacements.filter(
+          fp => fp.studentId !== studentId
+        )
+      };
+    }
+
+    // 모든 고정 해제
+    case 'CLEAR_ALL_FIXED_PLACEMENTS':
+      return {
+        ...state,
+        fixedPlacements: []
+      };
+
+    // 고정 배치 목록 설정 (로드용)
+    case 'SET_FIXED_PLACEMENTS':
+      return {
+        ...state,
+        fixedPlacements: action.payload
+      };
+
+    // 기존 액션들도 수정 필요
+    case 'REMOVE_STUDENT': {
+      const studentId = action.payload;
+      return {
+        ...state,
+        students: state.students.filter(s => s.id !== studentId),
+        // 해당 학생의 배치 제거
+        currentSeating: Object.fromEntries(
+          Object.entries(state.currentSeating).filter(([_, id]) => id !== studentId)
+        ),
+        // 해당 학생의 고정 제거
+        fixedPlacements: state.fixedPlacements.filter(fp => fp.studentId !== studentId),
+        ui: {
+          ...state.ui,
+          selectedStudents: state.ui.selectedStudents.filter(id => id !== studentId),
+        },
+      };
+    }
+
+    case 'RESET_ALL':
+      return createInitialState();
+
+    // CLEAR_SEATING 액션 수정 - 고정된 학생은 유지
+    case 'CLEAR_SEATING': {
+      // 고정된 학생들의 배치는 유지
+      const fixedSeating: SeatingArrangement = {};
+      state.fixedPlacements.forEach(fp => {
+        const posKey = `${fp.position.row}-${fp.position.col}`;
+        fixedSeating[posKey] = fp.studentId;
+      });
+      
+      return {
+        ...state,
+        currentSeating: fixedSeating
+      };
+    }
 
     // 제약조건
     case 'SET_CONSTRAINTS':
