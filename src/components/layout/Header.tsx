@@ -133,7 +133,7 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
               className="border-none"
             />
             <h1 className="text-xl font-semibold text-gray-900">
-              교실 좌석 배치 시스템
+              교실 자리 배치 시스템
             </h1>
           </div>
           
