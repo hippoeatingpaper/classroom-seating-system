@@ -7,6 +7,7 @@ import { exportData, resetAllData, confirmResetWithBackup, saveToStorage } from 
 import { createInitialState } from '@/context/AppReducer';
 import { exportSeatingToExcel } from '@/utils/excelExporter';
 import { FileDown } from 'lucide-react';
+import { validatePrintConditions, executePrint, calculateOptimalScale } from '@/utils/printUtils';
 
 interface HeaderProps {
   onToggleSidebar: () => void;
@@ -76,11 +77,22 @@ export const Header: React.FC<HeaderProps> = ({ onToggleSidebar }) => {
   };
 
   const handlePrint = () => {
-    if (Object.keys(state.currentSeating).length === 0) {
-      alert('인쇄할 배치가 없습니다.');
+    const validation = validatePrintConditions(state.currentSeating);
+    
+    if (!validation.canPrint) {
+      alert(validation.message);
       return;
     }
-    window.print();
+
+    // 교실 크기에 따른 최적 스케일 계산
+    const optimalScale = calculateOptimalScale(state.classroom.rows, state.classroom.cols);
+    
+    executePrint({
+      scale: optimalScale,
+      showStudentNumbers: true,
+      paperSize: 'A4',
+      orientation: 'landscape'
+    });
   };
 
   const handleReset = () => {

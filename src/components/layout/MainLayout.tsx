@@ -5,6 +5,8 @@ import { ControlPanel } from './ControlPanel';
 import { ClassroomGrid } from '@/components/classroom/ClassroomGrid';
 import { LoadingSpinner } from '@/components/common/LoadingSpinner';
 import { useAppContext } from '@/context/AppContext';
+import { PrintView } from '@/components/print/PrintView';
+import { calculateOptimalScale } from '@/utils/printUtils';
 
 export const MainLayout: React.FC = () => {
   const { state } = useAppContext();
@@ -34,6 +36,13 @@ export const MainLayout: React.FC = () => {
               </div>
               
               <ClassroomGrid />
+              {/* 인쇄 전용 영역 (화면에서는 숨김) */}
+              <div className="print-only" style={{ display: 'none' }}>
+                <PrintView 
+                  scale={calculateOptimalScale(state.classroom.rows, state.classroom.cols)}
+                  showStudentNumbers={true}
+                />
+              </div>
             </div>
           </div>
         </main>
