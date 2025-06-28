@@ -61,16 +61,12 @@ export class AdaptiveRandomHeuristicEngine {
   private classroom: ClassroomConfig;
   private constraints: Constraints;
   private availableSeats: Position[];
-  private constraintGraph: Map<string, string[]>;
   private randomConfig: RandomizationConfig;
   private placementHistory: PlacementDecision[] = [];
   private diversityMap: Map<string, number> = new Map();
   private rng: () => number;
   private fixedPlacements: FixedStudentPlacement[]; 
   private fixedSeating: SeatingArrangement; 
-  private startTime: number = 0;
-  private maxDepth: number;
-  private timeLimit: number;
 
   constructor(
     classroom: ClassroomConfig,
@@ -78,7 +74,7 @@ export class AdaptiveRandomHeuristicEngine {
     randomConfig?: Partial<RandomizationConfig>,
     seed?: number,
     fixedPlacements: FixedStudentPlacement[] = [],
-    options: { maxDepth?: number; timeLimit?: number } = {} 
+    // options: { maxDepth?: number; timeLimit?: number } = {} 
   ) {
     this.classroom = classroom;
     this.constraints = constraints;
@@ -87,17 +83,17 @@ export class AdaptiveRandomHeuristicEngine {
     this.availableSeats = getAvailableSeatsExcludingFixed(classroom, fixedPlacements); // 수정
     this.randomConfig = this.createRandomConfig(randomConfig);
     this.rng = this.createSeededRandom(seed);
-    this.constraintGraph = this.buildConstraintGraph();
+    // this.constraintGraph = this.buildConstraintGraph();
     this.initializeDiversityMap();
-    this.maxDepth = options.maxDepth || 1000;
-    this.timeLimit = options.timeLimit || 30000;
+    // this.maxDepth = options.maxDepth || 1000;
+    // this.timeLimit = options.timeLimit || 30000;
   }
 
   /**
    * 메인 배치 실행
    */
   public async generatePlacement(students: Student[]): Promise<PlacementResult> {
-    this.startTime = Date.now();
+    // this.startTime = Date.now();
     
     console.log(`🎲 적응형 랜덤 휴리스틱 시작 (모드: ${this.randomConfig.mode})`);
     
@@ -163,39 +159,39 @@ export class AdaptiveRandomHeuristicEngine {
   /**
    * 현재 배치에서 사용 가능한 위치들 반환 (고정된 좌석 제외)
    */
-  private getAvailablePositions(currentSeating: SeatingArrangement): Position[] {
-    const usedPositions = new Set(Object.keys(currentSeating));
-    return this.availableSeats.filter(pos => {
-      const posKey = `${pos.row}-${pos.col}`;
-      return !usedPositions.has(posKey);
-    });
-  }
+  // private getAvailablePositions(currentSeating: SeatingArrangement): Position[] {
+  //   const usedPositions = new Set(Object.keys(currentSeating));
+  //   return this.availableSeats.filter(pos => {
+  //     const posKey = `${pos.row}-${pos.col}`;
+  //     return !usedPositions.has(posKey);
+  //   });
+  // }
 
   /**
    * 제약조건 그래프 구축 (학생 간 연결 관계)
    */
-  private buildConstraintGraph(): Map<string, string[]> {
-    const graph = new Map<string, string[]>();
+  // private buildConstraintGraph(): Map<string, string[]> {
+  //   const graph = new Map<string, string[]>();
     
-    // 모든 제약조건에서 학생 쌍들을 추출하여 그래프 구성
-    const allConstraints = [
-      ...this.constraints.pairRequired,
-      ...this.constraints.pairProhibited,
-      ...this.constraints.distanceRules
-    ];
+  //   // 모든 제약조건에서 학생 쌍들을 추출하여 그래프 구성
+  //   const allConstraints = [
+  //     ...this.constraints.pairRequired,
+  //     ...this.constraints.pairProhibited,
+  //     ...this.constraints.distanceRules
+  //   ];
 
-    allConstraints.forEach(constraint => {
-      const [student1, student2] = constraint.students;
+  //   allConstraints.forEach(constraint => {
+  //     const [student1, student2] = constraint.students;
       
-      if (!graph.has(student1)) graph.set(student1, []);
-      if (!graph.has(student2)) graph.set(student2, []);
+  //     if (!graph.has(student1)) graph.set(student1, []);
+  //     if (!graph.has(student2)) graph.set(student2, []);
       
-      graph.get(student1)!.push(student2);
-      graph.get(student2)!.push(student1);
-    });
+  //     graph.get(student1)!.push(student2);
+  //     graph.get(student2)!.push(student1);
+  //   });
 
-    return graph;
-  }
+  //   return graph;
+  // }
 
   /**
    * 단일 배치 단계 실행

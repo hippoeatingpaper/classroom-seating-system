@@ -1,5 +1,5 @@
 //src/context/AppReducer.tsx
-import { AppState, AppAction, Student, ClassroomConfig, SeatingArrangement, FixedStudentPlacement  } from '@/types';
+import { AppState, AppAction, Student, ClassroomConfig, SeatingArrangement, } from '@/types';
 import { generateId } from '@/utils/idGenerator';
 
 /**

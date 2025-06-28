@@ -31,42 +31,42 @@ export const ClassroomGrid: React.FC = () => {
   };
 
   // 좌석 스타일을 결정하는 함수 수정
-  const getSeatStyle = (row: number, col: number) => {
-    const positionKey = `${row}-${col}`;
-    const studentId = state.currentSeating[positionKey];
-    const student = studentId ? state.students.find(s => s.id === studentId) : null;
-    const isFixed = isStudentFixed(row, col);
+  // const getSeatStyle = (row: number, col: number) => {
+  //   const positionKey = `${row}-${col}`;
+  //   const studentId = state.currentSeating[positionKey];
+  //   const student = studentId ? state.students.find(s => s.id === studentId) : null;
+  //   const isFixed = isStudentFixed(row, col);
     
-    // 사용 불가 좌석 확인
-    const isDisabled = state.classroom.seatUsageConstraints.some(
-      c => c.position.row === row && c.position.col === col && c.isDisabled
-    );
+  //   // 사용 불가 좌석 확인
+  //   const isDisabled = state.classroom.seatUsageConstraints.some(
+  //     c => c.position.row === row && c.position.col === col && c.isDisabled
+  //   );
 
-    if (isDisabled) {
-      return 'bg-gray-300 disabled-seat-pattern cursor-not-allowed';
-    }
+  //   if (isDisabled) {
+  //     return 'bg-gray-300 disabled-seat-pattern cursor-not-allowed';
+  //   }
 
-    // 성별 제약 확인
-    const genderConstraint = state.classroom.seatGenderConstraints.find(
-      c => c.position.row === row && c.position.col === col
-    );
+  //   // 성별 제약 확인
+  //   const genderConstraint = state.classroom.seatGenderConstraints.find(
+  //     c => c.position.row === row && c.position.col === col
+  //   );
 
-    if (student) {
-      // 학생이 있는 경우
-      const baseClass = student.gender === 'male' ? 'bg-seat-male' : 'bg-seat-female';
-      const fixedClass = isFixed ? 'ring-4 ring-orange-400 ring-opacity-70 shadow-lg' : '';
-      return `${baseClass} ${fixedClass} cursor-pointer hover:shadow-md transition-all duration-200`;
-    } else {
-      // 빈 좌석인 경우
-      if (genderConstraint && genderConstraint.requiredGender) {
-        const constraintClass = genderConstraint.requiredGender === 'male' 
-          ? 'bg-gray-200 border-2 border-blue-600' 
-          : 'bg-gray-200 border-2 border-pink-600';
-        return `${constraintClass} cursor-pointer hover:bg-gray-100`;
-      }
-      return 'bg-seat-empty border border-gray-300 border-dashed cursor-pointer hover:bg-gray-50';
-    }
-  };
+  //   if (student) {
+  //     // 학생이 있는 경우
+  //     const baseClass = student.gender === 'male' ? 'bg-seat-male' : 'bg-seat-female';
+  //     const fixedClass = isFixed ? 'ring-4 ring-orange-400 ring-opacity-70 shadow-lg' : '';
+  //     return `${baseClass} ${fixedClass} cursor-pointer hover:shadow-md transition-all duration-200`;
+  //   } else {
+  //     // 빈 좌석인 경우
+  //     if (genderConstraint && genderConstraint.requiredGender) {
+  //       const constraintClass = genderConstraint.requiredGender === 'male' 
+  //         ? 'bg-gray-200 border-2 border-blue-600' 
+  //         : 'bg-gray-200 border-2 border-pink-600';
+  //       return `${constraintClass} cursor-pointer hover:bg-gray-100`;
+  //     }
+  //     return 'bg-seat-empty border border-gray-300 border-dashed cursor-pointer hover:bg-gray-50';
+  //   }
+  // };
 
   const renderSeats = () => {
     const seats = [];
