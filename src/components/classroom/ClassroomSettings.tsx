@@ -15,8 +15,10 @@ export const ClassroomSettings: React.FC = () => {
   const [selectedSeats, setSelectedSeats] = useState<{row: number, col: number}[]>([]);
   const [showGenderConstraintsModal, setShowGenderConstraintsModal] = useState(false);
   const [showBulkGenderModal, setShowBulkGenderModal] = useState(false);
-  const [genderMode, setGenderMode] = useState<'male' | 'female' | 'clear'>('male');
-  const [selectedGenderSeats, setSelectedGenderSeats] = useState<{row: number, col: number}[]>([]);
+  const [selectedMaleSeats, setSelectedMaleSeats] = useState<{row: number, col: number}[]>([]);
+  const [selectedFemaleSeats, setSelectedFemaleSeats] = useState<{row: number, col: number}[]>([]);
+  const [selectedClearSeats, setSelectedClearSeats] = useState<{row: number, col: number}[]>([]);
+  const [activeGenderTab, setActiveGenderTab] = useState<'male' | 'female' | 'clear'>('male');
 
   // 통계 계산
   const totalSeats = state.classroom.rows * state.classroom.cols;
@@ -161,44 +163,93 @@ export const ClassroomSettings: React.FC = () => {
   };
 
   const handleGenderSeatToggle = (row: number, col: number) => {
-    const existingIndex = selectedGenderSeats.findIndex(s => s.row === row && s.col === col);
-    if (existingIndex >= 0) {
-      setSelectedGenderSeats(selectedGenderSeats.filter((_, i) => i !== existingIndex));
-    } else {
-      setSelectedGenderSeats([...selectedGenderSeats, { row, col }]);
+    const position = { row, col };
+    
+    if (activeGenderTab === 'male') {
+      const existingIndex = selectedMaleSeats.findIndex(s => s.row === row && s.col === col);
+      if (existingIndex >= 0) {
+        setSelectedMaleSeats(selectedMaleSeats.filter((_, i) => i !== existingIndex));
+      } else {
+        setSelectedMaleSeats([...selectedMaleSeats, position]);
+        // 다른 탭에서 동일 좌석이 선택되어 있다면 해제
+        setSelectedFemaleSeats(prev => prev.filter(s => !(s.row === row && s.col === col)));
+        setSelectedClearSeats(prev => prev.filter(s => !(s.row === row && s.col === col)));
+      }
+    } else if (activeGenderTab === 'female') {
+      const existingIndex = selectedFemaleSeats.findIndex(s => s.row === row && s.col === col);
+      if (existingIndex >= 0) {
+        setSelectedFemaleSeats(selectedFemaleSeats.filter((_, i) => i !== existingIndex));
+      } else {
+        setSelectedFemaleSeats([...selectedFemaleSeats, position]);
+        // 다른 탭에서 동일 좌석이 선택되어 있다면 해제
+        setSelectedMaleSeats(prev => prev.filter(s => !(s.row === row && s.col === col)));
+        setSelectedClearSeats(prev => prev.filter(s => !(s.row === row && s.col === col)));
+      }
+    } else if (activeGenderTab === 'clear') {
+      const existingIndex = selectedClearSeats.findIndex(s => s.row === row && s.col === col);
+      if (existingIndex >= 0) {
+        setSelectedClearSeats(selectedClearSeats.filter((_, i) => i !== existingIndex));
+      } else {
+        setSelectedClearSeats([...selectedClearSeats, position]);
+        // 다른 탭에서 동일 좌석이 선택되어 있다면 해제
+        setSelectedMaleSeats(prev => prev.filter(s => !(s.row === row && s.col === col)));
+        setSelectedFemaleSeats(prev => prev.filter(s => !(s.row === row && s.col === col)));
+      }
     }
   };
 
   const handleBulkGenderSet = () => {
-    if (selectedGenderSeats.length === 0) {
+    const totalSelected = selectedMaleSeats.length + selectedFemaleSeats.length + selectedClearSeats.length;
+    
+    if (totalSelected === 0) {
       alert('선택된 좌석이 없습니다.');
       return;
     }
 
-    selectedGenderSeats.forEach(position => {
-      if (genderMode === 'clear') {
-        dispatch({
-          type: 'REMOVE_SEAT_GENDER_CONSTRAINT',
-          payload: position
-        });
-      } else {
-        dispatch({
-          type: 'SET_SEAT_GENDER_CONSTRAINT',
-          payload: {
-            position,
-            requiredGender: genderMode,
-            isLocked: true,
-          }
-        });
-      }
+    // 남학생 전용 좌석 설정
+    selectedMaleSeats.forEach(position => {
+      dispatch({
+        type: 'SET_SEAT_GENDER_CONSTRAINT',
+        payload: {
+          position,
+          requiredGender: 'male',
+          isLocked: true,
+        }
+      });
     });
 
-    setSelectedGenderSeats([]);
+    // 여학생 전용 좌석 설정
+    selectedFemaleSeats.forEach(position => {
+      dispatch({
+        type: 'SET_SEAT_GENDER_CONSTRAINT',
+        payload: {
+          position,
+          requiredGender: 'female',
+          isLocked: true,
+        }
+      });
+    });
+
+    // 제약 해제
+    selectedClearSeats.forEach(position => {
+      dispatch({
+        type: 'REMOVE_SEAT_GENDER_CONSTRAINT',
+        payload: position
+      });
+    });
+
+    // 선택 상태 초기화
+    setSelectedMaleSeats([]);
+    setSelectedFemaleSeats([]);
+    setSelectedClearSeats([]);
     setShowBulkGenderModal(false);
     
-    const actionText = genderMode === 'clear' ? '해제' : 
-                      genderMode === 'male' ? '남학생 전용으로 설정' : '여학생 전용으로 설정';
-    alert(`${selectedGenderSeats.length}개 좌석을 ${actionText}했습니다.`);
+    const resultMessages = [];
+    if (selectedMaleSeats.length > 0) resultMessages.push(`남학생 전용 ${selectedMaleSeats.length}개`);
+    if (selectedFemaleSeats.length > 0) resultMessages.push(`여학생 전용 ${selectedFemaleSeats.length}개`);
+    if (selectedClearSeats.length > 0) resultMessages.push(`제약 해제 ${selectedClearSeats.length}개`);
+    
+    alert(`좌석 설정을 완료했습니다: ${resultMessages.join(', ')}`);
   };
 
   const maxPairs = Math.floor(state.classroom.cols / 2);
@@ -626,8 +677,10 @@ export const ClassroomSettings: React.FC = () => {
         isOpen={showBulkGenderModal}
         onClose={() => {
           setShowBulkGenderModal(false);
-          setSelectedGenderSeats([]);
-          setGenderMode('male');
+          setSelectedMaleSeats([]);
+          setSelectedFemaleSeats([]);
+          setSelectedClearSeats([]);
+          setActiveGenderTab('male');
         }}
         title="성별 제약 좌석 일괄 설정"
         size="lg"
@@ -637,8 +690,10 @@ export const ClassroomSettings: React.FC = () => {
               variant="outline"
               onClick={() => {
                 setShowBulkGenderModal(false);
-                setSelectedGenderSeats([]);
-                setGenderMode('male');
+                setSelectedMaleSeats([]);
+                setSelectedFemaleSeats([]);
+                setSelectedClearSeats([]);
+                setActiveGenderTab('male');
               }}
             >
               취소
@@ -646,9 +701,9 @@ export const ClassroomSettings: React.FC = () => {
             <Button
               variant="primary"
               onClick={handleBulkGenderSet}
-              disabled={selectedGenderSeats.length === 0}
+              disabled={selectedMaleSeats.length + selectedFemaleSeats.length + selectedClearSeats.length === 0}
             >
-              적용 ({selectedGenderSeats.length}개)
+              적용 (남:{selectedMaleSeats.length} 여:{selectedFemaleSeats.length} 해제:{selectedClearSeats.length})
             </Button>
           </>
         }
@@ -657,41 +712,41 @@ export const ClassroomSettings: React.FC = () => {
           {/* 모드 선택 */}
           <div className="flex gap-2">
             <button
-              onClick={() => setGenderMode('male')}
+              onClick={() => setActiveGenderTab('male')}
               className={`flex-1 px-3 py-2 text-sm rounded-lg border-2 transition-colors ${
-                genderMode === 'male'
+                activeGenderTab === 'male'
                   ? 'border-blue-500 bg-blue-50 text-blue-700'
                   : 'border-gray-200 text-gray-600 hover:border-gray-300'
               }`}
             >
-              ♂ 남학생 전용
+              ♂ 남학생 전용 ({selectedMaleSeats.length})
             </button>
             <button
-              onClick={() => setGenderMode('female')}
+              onClick={() => setActiveGenderTab('female')}
               className={`flex-1 px-3 py-2 text-sm rounded-lg border-2 transition-colors ${
-                genderMode === 'female'
+                activeGenderTab === 'female'
                   ? 'border-pink-500 bg-pink-50 text-pink-700'
                   : 'border-gray-200 text-gray-600 hover:border-gray-300'
               }`}
             >
-              ♀ 여학생 전용
+              ♀ 여학생 전용 ({selectedFemaleSeats.length})
             </button>
             <button
-              onClick={() => setGenderMode('clear')}
+              onClick={() => setActiveGenderTab('clear')}
               className={`flex-1 px-3 py-2 text-sm rounded-lg border-2 transition-colors ${
-                genderMode === 'clear'
+                activeGenderTab === 'clear'
                   ? 'border-gray-500 bg-gray-50 text-gray-700'
                   : 'border-gray-200 text-gray-600 hover:border-gray-300'
               }`}
             >
-              🚫 제약 해제
+              🚫 제약 해제 ({selectedClearSeats.length})
             </button>
           </div>
 
           <div className="text-sm text-gray-700">
-            {genderMode === 'male' && '남학생만 앉을 수 있는 좌석을 선택하세요.'}
-            {genderMode === 'female' && '여학생만 앉을 수 있는 좌석을 선택하세요.'}
-            {genderMode === 'clear' && '성별 제약을 해제할 좌석을 선택하세요.'}
+            {activeGenderTab === 'male' && '남학생만 앉을 수 있는 좌석을 선택하세요. 다른 탭에서 선택한 좌석도 적용할 때 함께 처리됩니다.'}
+            {activeGenderTab === 'female' && '여학생만 앉을 수 있는 좌석을 선택하세요. 다른 탭에서 선택한 좌석도 적용할 때 함께 처리됩니다.'}
+            {activeGenderTab === 'clear' && '성별 제약을 해제할 좌석을 선택하세요. 다른 탭에서 선택한 좌석도 적용할 때 함께 처리됩니다.'}
           </div>
 
           {/* 좌석 선택 그리드 */}
@@ -703,7 +758,9 @@ export const ClassroomSettings: React.FC = () => {
           >
             {Array.from({ length: state.classroom.rows }, (_, row) =>
               Array.from({ length: state.classroom.cols }, (_, col) => {
-                const isSelected = selectedGenderSeats.some(s => s.row === row && s.col === col);
+                const isMaleSelected = selectedMaleSeats.some(s => s.row === row && s.col === col);
+                const isFemaleSelected = selectedFemaleSeats.some(s => s.row === row && s.col === col);
+                const isClearSelected = selectedClearSeats.some(s => s.row === row && s.col === col);
                 const isDisabled = disabledSeats.some(c => 
                   c.position.row === row && c.position.col === col
                 );
@@ -720,12 +777,12 @@ export const ClassroomSettings: React.FC = () => {
                     className={`w-12 h-10 text-xs font-medium rounded border-2 transition-all ${
                       isDisabled
                         ? 'bg-gray-300 border-gray-400 cursor-not-allowed disabled-seat-pattern'
-                        : isSelected
-                        ? genderMode === 'male' 
-                          ? 'bg-blue-200 border-blue-400 text-blue-800'
-                          : genderMode === 'female'
-                          ? 'bg-pink-200 border-pink-400 text-pink-800'
-                          : 'bg-gray-200 border-gray-400 text-gray-800'
+                        : isMaleSelected
+                        ? 'bg-blue-200 border-blue-400 text-blue-800'
+                        : isFemaleSelected
+                        ? 'bg-pink-200 border-pink-400 text-pink-800'
+                        : isClearSelected
+                        ? 'bg-gray-200 border-gray-400 text-gray-800'
                         : currentGenderConstraint?.requiredGender === 'male'
                         ? 'bg-blue-100 border-blue-300 text-blue-700'
                         : currentGenderConstraint?.requiredGender === 'female'
@@ -752,7 +809,7 @@ export const ClassroomSettings: React.FC = () => {
           </div>
 
           <div className="text-sm text-gray-600 text-center">
-            선택된 좌석: {selectedGenderSeats.length}개
+            선택된 좌석: {selectedSeats.length}개
           </div>
 
           <div className="bg-blue-50 border border-blue-200 rounded p-3 text-sm text-blue-800">
